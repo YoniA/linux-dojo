@@ -1,0 +1,1261 @@
+#!/usr/bin/env bash
+# linux-dojo — Interactive Linux Command Practice
+# Usage: bash linux-dojo
+
+set -uo pipefail
+
+# ── Colors ────────────────────────────────────────────────────────────────────
+RED=$'\033[0;31m'
+GREEN=$'\033[0;32m'
+YELLOW=$'\033[1;33m'
+BLUE=$'\033[0;34m'
+MAGENTA=$'\033[0;35m'
+CYAN=$'\033[0;36m'
+WHITE=$'\033[1;37m'
+BOLD=$'\033[1m'
+DIM=$'\033[2m'
+RESET=$'\033[0m'
+
+# ── Game state ────────────────────────────────────────────────────────────────
+SCORE=0
+STREAK=0
+LEVEL=1
+CHALLENGES_DONE=0
+HINTS_USED=0
+
+TMPDIR_GAME=$(mktemp -d)
+trap 'rm -rf "$TMPDIR_GAME"' EXIT
+
+# ── UI helpers ────────────────────────────────────────────────────────────────
+clear_screen() { printf '\033[2J\033[H'; }
+
+center() {
+    local text="$1"
+    local width; width=$(tput cols 2>/dev/null || echo 80)
+    local plain; plain=$(printf '%s' "$text" | sed 's/\x1b\[[0-9;]*m//g')
+    local plen=${#plain}
+    local pad=$(( (width - plen) / 2 ))
+    (( pad < 0 )) && pad=0
+    printf "%${pad}s%s\n" "" "$text"
+}
+
+divider() {
+    local width; width=$(tput cols 2>/dev/null || echo 80)
+    printf "${DIM}"
+    printf '%0.s─' $(seq 1 "$width")
+    printf "${RESET}\n"
+}
+
+header() {
+    clear_screen
+    echo
+    center "${BOLD}${BLUE}>_  LINUX DOJO  _<${RESET}"
+    center "${DIM}Practice Linux commands. Master the shell.${RESET}"
+    echo
+    divider
+    printf "  ${YELLOW}Score: ${WHITE}%-6d${RESET}  ${MAGENTA}Streak: ${WHITE}%-3d${RESET}  ${CYAN}Level: ${WHITE}%-2d${RESET}  ${GREEN}Done: ${WHITE}%d${RESET}\n" \
+        "$SCORE" "$STREAK" "$LEVEL" "$CHALLENGES_DONE"
+    divider
+    echo
+}
+
+press_enter() {
+    printf "\n  ${DIM}Press Enter to continue...${RESET}"
+    read -r
+}
+
+show_dir_state() {
+    local dir="$1"
+    local out
+    out=$(cd "$dir" && find . | sort | head -25 2>/dev/null)
+    if [[ -n "$out" ]]; then
+        echo "$out" | while IFS= read -r line; do
+            printf "  ${DIM}%s${RESET}\n" "$line"
+        done
+    else
+        printf "  ${DIM}(empty directory)${RESET}\n"
+    fi
+}
+
+# ── Arena helpers ─────────────────────────────────────────────────────────────
+new_arena() {
+    local arena
+    arena="$TMPDIR_GAME/arena_$RANDOM"
+    mkdir -p "$arena"
+    echo "$arena"
+}
+
+# ── Challenge engine ──────────────────────────────────────────────────────────
+run_linux_challenge() {
+    local title="$1"
+    local desc="$2"
+    local arena="$3"
+    local check_code="$4"
+    local hint="$5"
+    local answer="$6"
+    local points="${7:-10}"
+
+    header
+    printf "  ${BOLD}${WHITE}CHALLENGE: ${YELLOW}%s${RESET}\n\n" "$title"
+    while IFS= read -r line; do
+        printf "  %s\n" "$line"
+    done <<< "$(printf '%b' "$desc")"
+    echo
+    divider
+    printf "  ${CYAN}Working directory:${RESET} ${DIM}%s${RESET}\n\n" "$arena"
+    show_dir_state "$arena"
+    echo
+    divider
+    printf "  ${DIM}[Points: %d]  h = hint   s = skip   Enter = open shell${RESET}\n" "$points"
+    echo
+    printf "  ${GREEN}▶  ${RESET}"
+
+    local choice hint_used=0
+    read -r choice
+
+    if [[ "$choice" == "s" ]]; then
+        printf "\n  ${YELLOW}Skipped.${RESET}\n"
+        STREAK=0
+        press_enter
+        return 1
+    fi
+
+    if [[ "$choice" == "h" ]]; then
+        printf "\n  ${YELLOW}Hint:${RESET} ${WHITE}%s${RESET}\n" "$hint"
+        HINTS_USED=$((HINTS_USED + 1))
+        hint_used=1
+        printf "\n  ${DIM}Press Enter to open shell...${RESET}"
+        read -r
+    fi
+
+    printf "\n  ${DIM}Working dir: %s${RESET}\n" "$arena"
+    printf "  ${DIM}Run your commands below. Type 'exit' when done.${RESET}\n\n"
+    (cd "$arena" && "$SHELL")
+
+    local passed=0
+    if (set +o pipefail; cd "$arena" && eval "$check_code") &>/dev/null; then
+        passed=1
+    fi
+
+    if (( passed )); then
+        local earned=$points
+        (( hint_used )) && earned=$(( points / 2 ))
+
+        SCORE=$(( SCORE + earned ))
+        STREAK=$(( STREAK + 1 ))
+        CHALLENGES_DONE=$(( CHALLENGES_DONE + 1 ))
+
+        header
+        printf "  ${GREEN}${BOLD}✓  CORRECT!${RESET}"
+        (( STREAK > 1 )) && printf "  ${YELLOW}${BOLD}${STREAK}× STREAK!${RESET}"
+        printf "\n\n"
+        printf "  ${WHITE}+%d points${RESET}\n\n" "$earned"
+        printf "  ${CYAN}Solution:${RESET} ${WHITE}%s${RESET}\n" "$answer"
+
+        if (( SCORE >= LEVEL * 100 )); then
+            LEVEL=$(( LEVEL + 1 ))
+            echo
+            printf "  ${MAGENTA}${BOLD}★  LEVEL UP! You are now Level %d  ★${RESET}\n" "$LEVEL"
+        fi
+        press_enter
+        return 0
+    else
+        STREAK=0
+        header
+        printf "  ${RED}${BOLD}✗  Not quite.${RESET}\n\n"
+        printf "  ${CYAN}Directory state after your attempt:${RESET}\n\n"
+        show_dir_state "$arena"
+        echo
+        printf "  ${YELLOW}Answer was:${RESET} ${WHITE}%s${RESET}\n" "$answer"
+        press_enter
+        return 1
+    fi
+}
+
+# ── Lessons ───────────────────────────────────────────────────────────────────
+
+lesson_navigation() {
+    header
+    center "${BOLD}${YELLOW}── LESSON 1: Navigation & Exploration ──${RESET}"
+    echo
+    printf "  Explore the filesystem:\n\n"
+    printf "  ${CYAN}ls${RESET}               list directory contents\n"
+    printf "  ${CYAN}ls -la${RESET}           long format, including hidden files\n"
+    printf "  ${CYAN}ls -d */  ${RESET}        list directories only\n"
+    printf "  ${CYAN}pwd${RESET}              print current directory\n"
+    printf "  ${CYAN}cd <dir>${RESET}         change directory\n"
+    printf "  ${CYAN}find . -name '*.ext'${RESET}   find files by name/extension\n"
+    printf "  ${CYAN}find . -type f${RESET}   find only regular files\n"
+    printf "  ${CYAN}find . -type d${RESET}   find only directories\n"
+    printf "  ${CYAN}wc -l${RESET}            count lines\n"
+    echo
+    press_enter
+
+    # Challenge 1: reveal hidden files
+    local a1; a1=$(new_arena)
+    printf 'top-secret\n' > "$a1/.secret"
+    printf 'visible\n'    > "$a1/readme.txt"
+    printf 'also visible\n' > "$a1/notes.txt"
+
+    run_linux_challenge \
+        "Reveal hidden files" \
+        "A hidden file (starting with .) lurks in this directory.\nFind it and write its name (just the filename) to 'found.txt'." \
+        "$a1" \
+        'grep -qx "\.secret" found.txt || grep -qx ".secret" found.txt' \
+        "ls -la shows hidden files; then: echo .secret > found.txt" \
+        "ls -la  →  echo .secret > found.txt" \
+        15
+
+    # Challenge 2: count files by extension
+    local a2; a2=$(new_arena)
+    printf 'log1\n' > "$a2/app.log"
+    printf 'log2\n' > "$a2/server.log"
+    printf 'log3\n' > "$a2/error.log"
+    printf 'data\n' > "$a2/readme.txt"
+    mkdir -p "$a2/archive"
+    printf 'old\n' > "$a2/archive/old.log"
+
+    run_linux_challenge \
+        "Count files by extension" \
+        "This directory tree contains several .log files (including subdirectories).\nCount all .log files recursively and write the number to 'count.txt'." \
+        "$a2" \
+        '[[ -f count.txt ]] && [[ $(tr -d " \t\n" < count.txt) -eq 4 ]]' \
+        "find . -name '*.log' | wc -l | tr -d ' ' > count.txt" \
+        "find . -name '*.log' | wc -l | tr -d ' ' > count.txt" \
+        20
+
+    # Challenge 3: navigate to nested content
+    local a3; a3=$(new_arena)
+    mkdir -p "$a3/a/b/c"
+    printf 'treasure\n' > "$a3/a/b/c/treasure.txt"
+
+    run_linux_challenge \
+        "Dig out a buried file" \
+        "A file 'treasure.txt' is buried inside a/b/c/.\nCopy it to the current (top-level) directory." \
+        "$a3" \
+        '[[ -f treasure.txt ]] && grep -q "treasure" treasure.txt' \
+        "cp a/b/c/treasure.txt .  (or use find to locate it first)" \
+        "cp a/b/c/treasure.txt ." \
+        15
+
+    # Challenge 4: list only subdirectories
+    local a4; a4=$(new_arena)
+    mkdir -p "$a4/docs" "$a4/src" "$a4/tests"
+    printf 'file\n' > "$a4/readme.txt"
+    printf 'file\n' > "$a4/Makefile"
+
+    run_linux_challenge \
+        "List only directories" \
+        "The working directory has both files and subdirectories.\nWrite the names of all immediate subdirectories to 'dirs.txt' (one per line, no trailing slash)." \
+        "$a4" \
+        'grep -q "docs" dirs.txt && grep -q "src" dirs.txt && grep -q "tests" dirs.txt && ! grep -q "readme" dirs.txt' \
+        "ls -d */ | tr -d '/' > dirs.txt  (or: find . -maxdepth 1 -mindepth 1 -type d)" \
+        "ls -d */ | tr -d '/' > dirs.txt" \
+        20
+}
+
+lesson_file_operations() {
+    header
+    center "${BOLD}${YELLOW}── LESSON 2: File Operations ──${RESET}"
+    echo
+    printf "  Creating, copying, moving, and removing files:\n\n"
+    printf "  ${CYAN}touch <file>${RESET}           create empty file / update timestamp\n"
+    printf "  ${CYAN}cp <src> <dst>${RESET}         copy file\n"
+    printf "  ${CYAN}cp -r <src> <dst>${RESET}      copy directory recursively\n"
+    printf "  ${CYAN}mv <src> <dst>${RESET}         move or rename\n"
+    printf "  ${CYAN}rm <file>${RESET}              remove file\n"
+    printf "  ${CYAN}rm -r <dir>${RESET}            remove directory recursively\n"
+    printf "  ${CYAN}rm *.ext${RESET}               remove files matching glob\n"
+    printf "  ${CYAN}mkdir <dir>${RESET}            create directory\n"
+    printf "  ${CYAN}mkdir -p a/b/c${RESET}         create nested directories\n"
+    printf "  ${CYAN}cat <file>${RESET}             print file contents\n"
+    printf "  ${CYAN}head -n N <file>${RESET}       first N lines\n"
+    printf "  ${CYAN}tail -n N <file>${RESET}       last N lines\n"
+    echo
+    press_enter
+
+    # Challenge 1: copy file to subdirectory
+    local a1; a1=$(new_arena)
+    mkdir -p "$a1/backup"
+    printf 'important data\n' > "$a1/data.txt"
+
+    run_linux_challenge \
+        "Copy a file into a directory" \
+        "'data.txt' exists at the top level. A 'backup/' directory also exists.\nCopy 'data.txt' into 'backup/' so both copies exist." \
+        "$a1" \
+        '[[ -f data.txt ]] && [[ -f backup/data.txt ]]' \
+        "cp data.txt backup/" \
+        "cp data.txt backup/" \
+        10
+
+    # Challenge 2: rename a file
+    local a2; a2=$(new_arena)
+    printf 'script content\n' > "$a2/script.sh.bak"
+
+    run_linux_challenge \
+        "Rename a file" \
+        "'script.sh.bak' should be renamed to 'script.sh'.\nThe old name should no longer exist." \
+        "$a2" \
+        '[[ -f script.sh ]] && ! [[ -f script.sh.bak ]]' \
+        "mv script.sh.bak script.sh" \
+        "mv script.sh.bak script.sh" \
+        10
+
+    # Challenge 3: create a nested directory structure
+    local a3; a3=$(new_arena)
+
+    run_linux_challenge \
+        "Create nested directories" \
+        "Create the directory structure: src/components/ui/\n(all three levels must exist with a single command)." \
+        "$a3" \
+        '[[ -d src/components/ui ]]' \
+        "mkdir -p creates all intermediate directories" \
+        "mkdir -p src/components/ui" \
+        15
+
+    # Challenge 4: remove files matching a pattern
+    local a4; a4=$(new_arena)
+    printf 'a\n' > "$a4/file1.tmp"
+    printf 'b\n' > "$a4/file2.tmp"
+    printf 'c\n' > "$a4/file3.tmp"
+    printf 'keep\n' > "$a4/important.txt"
+    printf 'keep\n' > "$a4/readme.md"
+
+    run_linux_challenge \
+        "Delete files by pattern" \
+        "Three '.tmp' files exist alongside important files.\nDelete all '.tmp' files without touching the others." \
+        "$a4" \
+        '! ls *.tmp 2>/dev/null | grep -q "tmp" && [[ -f important.txt ]] && [[ -f readme.md ]]' \
+        "rm *.tmp" \
+        "rm *.tmp" \
+        15
+
+    # Challenge 5: read first and last lines
+    local a5; a5=$(new_arena)
+    seq 1 20 | awk '{print "line " $1}' > "$a5/numbers.txt"
+
+    run_linux_challenge \
+        "Extract first and last lines" \
+        "'numbers.txt' has 20 lines (\"line 1\" through \"line 20\").\nWrite the first line to 'first.txt' and the last line to 'last.txt'." \
+        "$a5" \
+        'grep -qx "line 1" first.txt && grep -qx "line 20" last.txt' \
+        "head -n 1 numbers.txt > first.txt  &&  tail -n 1 numbers.txt > last.txt" \
+        "head -n 1 numbers.txt > first.txt  &&  tail -n 1 numbers.txt > last.txt" \
+        15
+}
+
+lesson_text_processing() {
+    header
+    center "${BOLD}${YELLOW}── LESSON 3: Text Processing ──${RESET}"
+    echo
+    printf "  Slice, dice, and search text:\n\n"
+    printf "  ${CYAN}grep 'pattern' <file>${RESET}      print matching lines\n"
+    printf "  ${CYAN}grep -i${RESET}                    case-insensitive match\n"
+    printf "  ${CYAN}grep -v 'pattern'${RESET}          invert match (non-matching lines)\n"
+    printf "  ${CYAN}grep -c${RESET}                    count matching lines\n"
+    printf "  ${CYAN}grep -r 'pattern' .${RESET}        recursive search\n"
+    printf "  ${CYAN}sort <file>${RESET}                sort lines alphabetically\n"
+    printf "  ${CYAN}sort -n${RESET}                    numeric sort\n"
+    printf "  ${CYAN}sort -r${RESET}                    reverse sort\n"
+    printf "  ${CYAN}uniq${RESET}                       remove adjacent duplicates\n"
+    printf "  ${CYAN}sort | uniq -c${RESET}             count occurrences\n"
+    printf "  ${CYAN}wc -l / -w / -c${RESET}            count lines / words / chars\n"
+    printf "  ${CYAN}cut -d',' -f2${RESET}              extract field 2 (CSV)\n"
+    echo
+    press_enter
+
+    # Challenge 1: grep for matching lines
+    local a1; a1=$(new_arena)
+    cat > "$a1/server.log" << 'EOF'
+2024-01-01 INFO  server started
+2024-01-01 ERROR connection refused
+2024-01-01 INFO  request received
+2024-01-02 ERROR timeout exceeded
+2024-01-02 INFO  response sent
+2024-01-02 ERROR disk full
+EOF
+
+    run_linux_challenge \
+        "Filter log by level" \
+        "'server.log' contains mixed INFO and ERROR lines.\nExtract only the ERROR lines into 'errors.txt'." \
+        "$a1" \
+        '[[ -f errors.txt ]] && grep -q "ERROR" errors.txt && ! grep -q "INFO" errors.txt' \
+        "grep 'ERROR' server.log > errors.txt" \
+        "grep 'ERROR' server.log > errors.txt" \
+        15
+
+    # Challenge 2: sort and deduplicate
+    local a2; a2=$(new_arena)
+    cat > "$a2/words.txt" << 'EOF'
+banana
+apple
+cherry
+apple
+banana
+date
+cherry
+cherry
+EOF
+
+    run_linux_challenge \
+        "Sort and deduplicate" \
+        "'words.txt' has duplicate entries out of order.\nWrite a sorted, deduplicated list to 'unique.txt'." \
+        "$a2" \
+        '[[ -f unique.txt ]] && [[ $(wc -l < unique.txt | tr -d " ") -eq 4 ]] && grep -qx "apple" unique.txt' \
+        "sort words.txt | uniq > unique.txt" \
+        "sort words.txt | uniq > unique.txt" \
+        15
+
+    # Challenge 3: count occurrences
+    local a3; a3=$(new_arena)
+    cat > "$a3/access.log" << 'EOF'
+GET /home
+POST /api
+GET /home
+GET /about
+POST /api
+GET /home
+GET /contact
+POST /login
+GET /home
+EOF
+
+    run_linux_challenge \
+        "Count most-visited paths" \
+        "'access.log' has one URL path per line.\nWrite a frequency-sorted count to 'freq.txt'.\nEach line: \"  N path\" with the most-visited first.\n\n${DIM}Tip: cut -d' ' -f2 | sort | uniq -c | sort -rn${RESET}" \
+        "$a3" \
+        '[[ -f freq.txt ]] && head -1 freq.txt | grep -q "4"' \
+        "cut -d' ' -f2 access.log | sort | uniq -c | sort -rn > freq.txt" \
+        "cut -d' ' -f2 access.log | sort | uniq -c | sort -rn > freq.txt" \
+        25
+
+    # Challenge 4: extract CSV column
+    local a4; a4=$(new_arena)
+    cat > "$a4/data.csv" << 'EOF'
+alice,30,engineer
+bob,25,designer
+carol,35,manager
+dave,28,engineer
+EOF
+
+    run_linux_challenge \
+        "Extract a CSV column" \
+        "'data.csv' has three columns: name, age, role.\nExtract just the names (column 1) into 'names.txt'." \
+        "$a4" \
+        '[[ -f names.txt ]] && grep -qx "alice" names.txt && grep -qx "bob" names.txt && ! grep -q "engineer" names.txt' \
+        "cut -d',' -f1 data.csv > names.txt" \
+        "cut -d',' -f1 data.csv > names.txt" \
+        20
+
+    # Challenge 5: grep -v to exclude
+    local a5; a5=$(new_arena)
+    cat > "$a5/config.txt" << 'EOF'
+# This is a comment
+host=localhost
+# Another comment
+port=8080
+# Debug mode
+debug=false
+EOF
+
+    run_linux_challenge \
+        "Strip comments from config" \
+        "'config.txt' has lines starting with '#' (comments) and real config.\nWrite only the non-comment lines to 'config.clean'." \
+        "$a5" \
+        '[[ -f config.clean ]] && ! grep -q "^#" config.clean && grep -q "host=" config.clean' \
+        "grep -v '^#' config.txt > config.clean" \
+        "grep -v '^#' config.txt > config.clean" \
+        20
+}
+
+lesson_redirection() {
+    header
+    center "${BOLD}${YELLOW}── LESSON 4: Streams & Redirection ──${RESET}"
+    echo
+    printf "  Control where input and output flow:\n\n"
+    printf "  ${CYAN}command > file${RESET}       redirect stdout, overwrite\n"
+    printf "  ${CYAN}command >> file${RESET}      redirect stdout, append\n"
+    printf "  ${CYAN}command < file${RESET}       use file as stdin\n"
+    printf "  ${CYAN}command 2> file${RESET}      redirect stderr\n"
+    printf "  ${CYAN}command 2>&1${RESET}         merge stderr into stdout\n"
+    printf "  ${CYAN}cmd1 | cmd2${RESET}          pipe stdout of cmd1 to stdin of cmd2\n"
+    printf "  ${CYAN}tee <file>${RESET}           write to file AND stdout simultaneously\n"
+    printf "  ${CYAN}xargs${RESET}                build and execute commands from stdin\n"
+    echo
+    printf "  ${DIM}File descriptors: 0=stdin, 1=stdout, 2=stderr${RESET}\n"
+    echo
+    press_enter
+
+    # Challenge 1: redirect output to file
+    local a1; a1=$(new_arena)
+    printf 'alpha\nbeta\ngamma\n' > "$a1/input.txt"
+
+    run_linux_challenge \
+        "Redirect to a file" \
+        "Sort 'input.txt' alphabetically and save the result to 'sorted.txt'.\nDo not modify 'input.txt'." \
+        "$a1" \
+        '[[ -f sorted.txt ]] && [[ $(head -1 sorted.txt) == "alpha" ]] && [[ -f input.txt ]]' \
+        "sort input.txt > sorted.txt" \
+        "sort input.txt > sorted.txt" \
+        10
+
+    # Challenge 2: append to a file
+    local a2; a2=$(new_arena)
+    printf 'first line\n' > "$a2/log.txt"
+    printf 'second line\n' > "$a2/more.txt"
+
+    run_linux_challenge \
+        "Append to a file" \
+        "'log.txt' has one line. Append the contents of 'more.txt' to it.\n'log.txt' should end up with both lines." \
+        "$a2" \
+        '[[ $(wc -l < log.txt | tr -d " ") -eq 2 ]] && grep -q "first line" log.txt && grep -q "second line" log.txt' \
+        "cat more.txt >> log.txt" \
+        "cat more.txt >> log.txt" \
+        10
+
+    # Challenge 3: pipeline combining commands
+    local a3; a3=$(new_arena)
+    printf 'error: disk full\ninfo: started\nerror: timeout\nwarn: slow\nerror: crash\n' > "$a3/events.log"
+
+    run_linux_challenge \
+        "Count with a pipeline" \
+        "'events.log' has mixed event types.\nCount the number of 'error:' lines and write the number to 'error_count.txt'." \
+        "$a3" \
+        '[[ -f error_count.txt ]] && [[ $(tr -d " \t\n" < error_count.txt) -eq 3 ]]' \
+        "grep 'error:' events.log | wc -l | tr -d ' ' > error_count.txt" \
+        "grep 'error:' events.log | wc -l | tr -d ' ' > error_count.txt" \
+        20
+
+    # Challenge 4: suppress stderr
+    local a4; a4=$(new_arena)
+    printf 'real output\n' > "$a4/good.txt"
+
+    run_linux_challenge \
+        "Silence stderr" \
+        "Run: cat good.txt nonexistent.txt\nCapture only stdout to 'out.txt' (stderr errors should be discarded).\n'out.txt' should contain just \"real output\"." \
+        "$a4" \
+        '[[ -f out.txt ]] && grep -qx "real output" out.txt && ! grep -q "No such file" out.txt' \
+        "cat good.txt nonexistent.txt 2>/dev/null > out.txt" \
+        "cat good.txt nonexistent.txt 2>/dev/null > out.txt" \
+        20
+
+    # Challenge 5: tee
+    local a5; a5=$(new_arena)
+    printf 'apple\nbanana\ncherry\n' > "$a5/fruits.txt"
+
+    run_linux_challenge \
+        "Use tee to split output" \
+        "Sort 'fruits.txt' and save the sorted result to 'sorted.txt'.\nAlso count the sorted lines and save the count to 'count.txt'.\n\n${DIM}Tip: sort fruits.txt | tee sorted.txt | wc -l > count.txt${RESET}" \
+        "$a5" \
+        '[[ -f sorted.txt ]] && [[ -f count.txt ]] && [[ $(tr -d " \t\n" < count.txt) -eq 3 ]] && [[ $(head -1 sorted.txt) == "apple" ]]' \
+        "sort fruits.txt | tee sorted.txt | wc -l | tr -d ' ' > count.txt" \
+        "sort fruits.txt | tee sorted.txt | wc -l | tr -d ' ' > count.txt" \
+        25
+}
+
+lesson_permissions() {
+    header
+    center "${BOLD}${YELLOW}── LESSON 5: Permissions ──${RESET}"
+    echo
+    printf "  Linux permission model:\n\n"
+    printf "  ${CYAN}ls -l${RESET}             show permissions: -rwxrwxrwx\n"
+    printf "                     [type][owner][group][others]\n\n"
+    printf "  ${CYAN}chmod +x file${RESET}     add execute bit (all)\n"
+    printf "  ${CYAN}chmod -w file${RESET}     remove write bit (all)\n"
+    printf "  ${CYAN}chmod 644 file${RESET}    numeric: rw-r--r--\n"
+    printf "  ${CYAN}chmod 755 file${RESET}    numeric: rwxr-xr-x\n"
+    printf "  ${CYAN}chmod 700 file${RESET}    numeric: rwx------\n\n"
+    printf "  ${BOLD}Numeric notation:${RESET}  4=read  2=write  1=execute\n"
+    printf "  Add them up:  7=rwx  6=rw-  5=r-x  4=r--\n\n"
+    printf "  ${CYAN}find . -perm /111${RESET} find executable files\n"
+    printf "  ${CYAN}find . -perm 644${RESET}  find files with exact permissions\n"
+    echo
+    press_enter
+
+    # Challenge 1: make a script executable
+    local a1; a1=$(new_arena)
+    printf '#!/bin/bash\necho hello\n' > "$a1/greet.sh"
+    chmod 644 "$a1/greet.sh"
+
+    run_linux_challenge \
+        "Make a script executable" \
+        "'greet.sh' exists but is not executable.\nAdd the execute permission so it can be run." \
+        "$a1" \
+        '[[ -x greet.sh ]]' \
+        "chmod +x greet.sh  (or: chmod 755 greet.sh)" \
+        "chmod +x greet.sh" \
+        10
+
+    # Challenge 2: set numeric permissions
+    local a2; a2=$(new_arena)
+    printf 'config data\n' > "$a2/app.conf"
+    chmod 777 "$a2/app.conf"
+
+    run_linux_challenge \
+        "Set safe config permissions" \
+        "'app.conf' currently has too-open permissions (777).\nSet it to 644: owner can read+write, group and others can only read." \
+        "$a2" \
+        '[[ $(stat -f "%A" app.conf 2>/dev/null || stat -c "%a" app.conf 2>/dev/null) == "644" ]]' \
+        "chmod 644 app.conf" \
+        "chmod 644 app.conf" \
+        15
+
+    # Challenge 3: remove write permission
+    local a3; a3=$(new_arena)
+    printf 'readonly content\n' > "$a3/archive.log"
+    chmod 644 "$a3/archive.log"
+
+    run_linux_challenge \
+        "Lock a file read-only" \
+        "'archive.log' should be read-only for everyone.\nRemove all write permissions." \
+        "$a3" \
+        '! [[ -w archive.log ]] && [[ -r archive.log ]]' \
+        "chmod a-w archive.log  (or: chmod 444 archive.log)" \
+        "chmod a-w archive.log" \
+        15
+
+    # Challenge 4: find executable files
+    local a4; a4=$(new_arena)
+    printf '#!/bin/bash\n' > "$a4/run.sh"
+    printf '#!/bin/bash\n' > "$a4/deploy.sh"
+    printf 'data\n'        > "$a4/data.txt"
+    printf 'config\n'      > "$a4/config.yml"
+    chmod +x "$a4/run.sh" "$a4/deploy.sh"
+
+    run_linux_challenge \
+        "Find all executable files" \
+        "Some files in this directory are executable.\nList their names (just filenames) in 'executables.txt', one per line." \
+        "$a4" \
+        'grep -q "run.sh" executables.txt && grep -q "deploy.sh" executables.txt && ! grep -q "data.txt" executables.txt' \
+        "find . -maxdepth 1 -type f -perm /111 | xargs -I{} basename {} > executables.txt" \
+        "find . -maxdepth 1 -type f -perm /111 -exec basename {} \\; > executables.txt" \
+        20
+}
+
+lesson_archives() {
+    header
+    center "${BOLD}${YELLOW}── LESSON 6: Archives & Compression ──${RESET}"
+    echo
+    printf "  Bundle and compress files:\n\n"
+    printf "  ${CYAN}tar cvf archive.tar <files>${RESET}      create tar archive\n"
+    printf "  ${CYAN}tar xvf archive.tar${RESET}              extract tar archive\n"
+    printf "  ${CYAN}tar tvf archive.tar${RESET}              list contents (don't extract)\n"
+    printf "  ${CYAN}tar czvf archive.tar.gz <files>${RESET}  create gzipped tar\n"
+    printf "  ${CYAN}tar xzvf archive.tar.gz${RESET}          extract gzipped tar\n"
+    printf "  ${CYAN}gzip <file>${RESET}                      compress to .gz (replaces file)\n"
+    printf "  ${CYAN}gunzip <file>.gz${RESET}                 decompress .gz\n"
+    printf "  ${CYAN}zip -r out.zip <dir>${RESET}             create zip archive\n"
+    printf "  ${CYAN}unzip out.zip${RESET}                    extract zip archive\n\n"
+    printf "  ${BOLD}tar flags:${RESET}  c=create  x=extract  t=list  v=verbose\n"
+    printf "             f=file  z=gzip  j=bzip2\n"
+    echo
+    press_enter
+
+    # Challenge 1: create a tar archive
+    local a1; a1=$(new_arena)
+    mkdir -p "$a1/project"
+    printf 'main code\n'  > "$a1/project/main.py"
+    printf 'tests\n'      > "$a1/project/test.py"
+    printf 'readme\n'     > "$a1/project/README.md"
+
+    run_linux_challenge \
+        "Create a tar archive" \
+        "Bundle the 'project/' directory into a tar archive named 'project.tar'." \
+        "$a1" \
+        '[[ -f project.tar ]] && tar tf project.tar | grep -q "main.py"' \
+        "tar cvf project.tar project/" \
+        "tar cvf project.tar project/" \
+        15
+
+    # Challenge 2: extract a tar archive
+    local a2; a2=$(new_arena)
+    mkdir -p "$TMPDIR_GAME/tarprep"
+    printf 'extracted!\n' > "$TMPDIR_GAME/tarprep/result.txt"
+    tar -C "$TMPDIR_GAME/tarprep" -cf "$a2/data.tar" result.txt
+    rm -rf "$TMPDIR_GAME/tarprep"
+
+    run_linux_challenge \
+        "Extract a tar archive" \
+        "'data.tar' contains a file. Extract its contents here." \
+        "$a2" \
+        '[[ -f result.txt ]] && grep -q "extracted" result.txt' \
+        "tar xvf data.tar" \
+        "tar xvf data.tar" \
+        10
+
+    # Challenge 3: create gzipped tarball
+    local a3; a3=$(new_arena)
+    mkdir -p "$a3/logs"
+    printf 'log entry 1\n' > "$a3/logs/app.log"
+    printf 'log entry 2\n' > "$a3/logs/error.log"
+
+    run_linux_challenge \
+        "Create a compressed tarball" \
+        "Compress the 'logs/' directory into 'logs.tar.gz' using gzip compression." \
+        "$a3" \
+        '[[ -f logs.tar.gz ]] && tar tzf logs.tar.gz | grep -q "app.log"' \
+        "tar czvf logs.tar.gz logs/" \
+        "tar czvf logs.tar.gz logs/" \
+        20
+
+    # Challenge 4: list archive contents without extracting
+    local a4; a4=$(new_arena)
+    mkdir -p "$TMPDIR_GAME/listprep"
+    printf 'a\n' > "$TMPDIR_GAME/listprep/alpha.txt"
+    printf 'b\n' > "$TMPDIR_GAME/listprep/beta.txt"
+    printf 'c\n' > "$TMPDIR_GAME/listprep/gamma.txt"
+    tar -C "$TMPDIR_GAME/listprep" -czf "$a4/bundle.tar.gz" .
+    rm -rf "$TMPDIR_GAME/listprep"
+
+    run_linux_challenge \
+        "List archive contents" \
+        "'bundle.tar.gz' contains several files.\nList its contents and write the output to 'contents.txt'.\nDo NOT extract the archive." \
+        "$a4" \
+        '[[ -f contents.txt ]] && grep -q "alpha.txt" contents.txt && ! [[ -f alpha.txt ]]' \
+        "tar tzf bundle.tar.gz > contents.txt  (t=list, z=gzip, f=file)" \
+        "tar tzf bundle.tar.gz > contents.txt" \
+        20
+}
+
+lesson_find_xargs() {
+    header
+    center "${BOLD}${YELLOW}── LESSON 7: find & xargs ──${RESET}"
+    echo
+    printf "  Power searching and bulk operations:\n\n"
+    printf "  ${CYAN}find . -name 'pattern'${RESET}           by name\n"
+    printf "  ${CYAN}find . -type f/d/l${RESET}               by type (file/dir/symlink)\n"
+    printf "  ${CYAN}find . -size +1k${RESET}                 larger than 1 kilobyte\n"
+    printf "  ${CYAN}find . -newer reference.txt${RESET}      modified more recently than file\n"
+    printf "  ${CYAN}find . -name '*.log' -delete${RESET}     find and delete\n"
+    printf "  ${CYAN}find . -exec cmd {} \\;${RESET}           run cmd on each result\n"
+    printf "  ${CYAN}find . -exec cmd {} +${RESET}            batch: pass multiple results to cmd\n"
+    printf "  ${CYAN}find . | xargs cmd${RESET}               pipe results to xargs\n"
+    printf "  ${CYAN}xargs -I{} cmd {}${RESET}                placeholder substitution\n"
+    printf "  ${CYAN}find . -name '*.py' | xargs grep 'TODO'${RESET}  search inside files\n"
+    echo
+    press_enter
+
+    # Challenge 1: find and delete
+    local a1; a1=$(new_arena)
+    printf 'old\n' > "$a1/cache1.tmp"
+    printf 'old\n' > "$a1/cache2.tmp"
+    printf 'old\n' > "$a1/cache3.tmp"
+    printf 'keep\n' > "$a1/important.txt"
+    mkdir -p "$a1/build"
+    printf 'artifact\n' > "$a1/build/output.tmp"
+
+    run_linux_challenge \
+        "Find and delete temp files" \
+        "The workspace has .tmp files scattered around (including in subdirs).\nDelete all of them in one command. Keep non-.tmp files." \
+        "$a1" \
+        '! find . -name "*.tmp" | grep -q "." && [[ -f important.txt ]]' \
+        "find . -name '*.tmp' -delete" \
+        "find . -name '*.tmp' -delete" \
+        20
+
+    # Challenge 2: find with -exec to process files
+    local a2; a2=$(new_arena)
+    mkdir -p "$a2/scripts"
+    printf '#!/bin/bash\necho a\n' > "$a2/scripts/deploy.sh"
+    printf '#!/bin/bash\necho b\n' > "$a2/scripts/build.sh"
+    printf '#!/bin/bash\necho c\n' > "$a2/scripts/test.sh"
+    printf 'not a script\n'        > "$a2/scripts/notes.txt"
+
+    run_linux_challenge \
+        "Make all scripts executable" \
+        "The 'scripts/' directory has .sh files that need execute permission.\nUse find + exec (or xargs) to chmod +x all .sh files at once." \
+        "$a2" \
+        '[[ -x scripts/deploy.sh ]] && [[ -x scripts/build.sh ]] && [[ -x scripts/test.sh ]]' \
+        "find scripts/ -name '*.sh' -exec chmod +x {} +" \
+        "find scripts/ -name '*.sh' -exec chmod +x {} +" \
+        20
+
+    # Challenge 3: search inside files with xargs
+    local a3; a3=$(new_arena)
+    mkdir -p "$a3/src"
+    printf 'def main():\n    pass\n'          > "$a3/src/app.py"
+    printf 'def helper():\n    # TODO: fix\n' > "$a3/src/utils.py"
+    printf 'class Config:\n    # TODO: add\n' > "$a3/src/config.py"
+    printf 'not python\n'                     > "$a3/src/data.txt"
+
+    run_linux_challenge \
+        "Find TODOs across source files" \
+        "Some Python files in 'src/' contain TODO comments.\nFind all .py files and search them for 'TODO'.\nWrite matching lines (with filenames) to 'todos.txt'." \
+        "$a3" \
+        '[[ -f todos.txt ]] && grep -q "TODO" todos.txt && grep -q "utils.py" todos.txt' \
+        "find src/ -name '*.py' | xargs grep 'TODO' > todos.txt" \
+        "find src/ -name '*.py' | xargs grep 'TODO' > todos.txt" \
+        25
+
+    # Challenge 4: find by size
+    local a4; a4=$(new_arena)
+    printf 'small\n' > "$a4/small.txt"
+    python3 -c "print('x' * 2000)" > "$a4/large.txt" 2>/dev/null || \
+        dd if=/dev/urandom bs=2048 count=1 2>/dev/null | base64 > "$a4/large.txt"
+    printf 'also small\n' > "$a4/tiny.txt"
+
+    run_linux_challenge \
+        "Find large files" \
+        "This directory has files of different sizes.\nFind files larger than 1KB and write their names to 'big.txt'." \
+        "$a4" \
+        '[[ -f big.txt ]] && grep -q "large.txt" big.txt && ! grep -q "small.txt" big.txt' \
+        "find . -maxdepth 1 -type f -size +1k | xargs -I{} basename {} > big.txt" \
+        "find . -maxdepth 1 -type f -size +1k -exec basename {} \\; > big.txt" \
+        25
+}
+
+lesson_sed_awk() {
+    header
+    center "${BOLD}${YELLOW}── LESSON 8: sed & awk ──${RESET}"
+    echo
+    printf "  Stream editors for text transformation:\n\n"
+    printf "  ${CYAN}sed 's/old/new/' file${RESET}           replace first match per line\n"
+    printf "  ${CYAN}sed 's/old/new/g' file${RESET}          replace all matches per line\n"
+    printf "  ${CYAN}sed -i[.bak] 's/..' file${RESET}        in-place edit\n"
+    printf "  ${CYAN}sed -n '2,4p' file${RESET}              print lines 2-4 only\n"
+    printf "  ${CYAN}sed '/pattern/d' file${RESET}            delete matching lines\n\n"
+    printf "  ${CYAN}awk '{print \$1}' file${RESET}           print first field\n"
+    printf "  ${CYAN}awk -F',' '{print \$2}' file${RESET}     comma-delimited, field 2\n"
+    printf "  ${CYAN}awk '\$3 > 10' file${RESET}              print rows where field 3 > 10\n"
+    printf "  ${CYAN}awk '{sum+=\$1} END{print sum}'${RESET}  sum a column\n"
+    printf "  ${CYAN}awk 'NR==3' file${RESET}                print line 3\n"
+    echo
+    printf "  ${DIM}Note: on macOS, sed -i requires a backup suffix: sed -i '' 's/..' file${RESET}\n"
+    echo
+    press_enter
+
+    # Challenge 1: sed substitution
+    local a1; a1=$(new_arena)
+    printf 'Hello world\nfoo world bar\nworld domination\n' > "$a1/text.txt"
+
+    run_linux_challenge \
+        "Replace text with sed" \
+        "'text.txt' contains the word 'world' on several lines.\nReplace every occurrence of 'world' with 'earth' and save to 'result.txt'." \
+        "$a1" \
+        '[[ -f result.txt ]] && ! grep -q "world" result.txt && grep -q "earth" result.txt' \
+        "sed 's/world/earth/g' text.txt > result.txt" \
+        "sed 's/world/earth/g' text.txt > result.txt" \
+        15
+
+    # Challenge 2: sed delete lines
+    local a2; a2=$(new_arena)
+    cat > "$a2/data.txt" << 'EOF'
+# header comment
+name=alice
+# inline comment
+age=30
+# another comment
+city=NYC
+EOF
+
+    run_linux_challenge \
+        "Delete comment lines with sed" \
+        "'data.txt' has comment lines starting with '#'.\nRemove all comment lines and save the result to 'clean.txt'." \
+        "$a2" \
+        '[[ -f clean.txt ]] && ! grep -q "^#" clean.txt && grep -q "name=alice" clean.txt' \
+        "sed '/^#/d' data.txt > clean.txt" \
+        "sed '/^#/d' data.txt > clean.txt" \
+        15
+
+    # Challenge 3: awk column extraction
+    local a3; a3=$(new_arena)
+    cat > "$a3/employees.txt" << 'EOF'
+alice   engineering  95000
+bob     marketing    72000
+carol   engineering  88000
+dave    design       78000
+EOF
+
+    run_linux_challenge \
+        "Extract a column with awk" \
+        "'employees.txt' has name, department, and salary columns (space-separated).\nExtract just the salary column (column 3) into 'salaries.txt'." \
+        "$a3" \
+        '[[ -f salaries.txt ]] && grep -qx "95000" salaries.txt && ! grep -q "alice" salaries.txt' \
+        "awk '{print \$3}' employees.txt > salaries.txt" \
+        "awk '{print \$3}' employees.txt > salaries.txt" \
+        15
+
+    # Challenge 4: awk with condition filter
+    local a4; a4=$(new_arena)
+    cat > "$a4/scores.txt" << 'EOF'
+alice 85
+bob   42
+carol 91
+dave  55
+eve   78
+frank 38
+EOF
+
+    run_linux_challenge \
+        "Filter rows with awk" \
+        "'scores.txt' has name and score columns.\nWrite only the rows where score >= 70 to 'passing.txt'." \
+        "$a4" \
+        '[[ -f passing.txt ]] && grep -q "alice" passing.txt && grep -q "carol" passing.txt && ! grep -q "bob" passing.txt && ! grep -q "frank" passing.txt' \
+        "awk '\$2 >= 70' scores.txt > passing.txt" \
+        "awk '\$2 >= 70' scores.txt > passing.txt" \
+        20
+
+    # Challenge 5: awk sum
+    local a5; a5=$(new_arena)
+    cat > "$a5/sales.txt" << 'EOF'
+jan 1200
+feb 980
+mar 1450
+apr 1100
+may 1320
+EOF
+
+    run_linux_challenge \
+        "Sum a column with awk" \
+        "'sales.txt' has month and sales amount columns.\nCalculate the total sales and write just the number to 'total.txt'." \
+        "$a5" \
+        '[[ -f total.txt ]] && [[ $(tr -d " \t\n" < total.txt) -eq 6050 ]]' \
+        "awk '{sum+=\$2} END{print sum}' sales.txt > total.txt" \
+        "awk '{sum+=\$2} END{print sum}' sales.txt > total.txt" \
+        25
+}
+
+# ── Random challenge pool ─────────────────────────────────────────────────────
+
+random_challenge() {
+    local r=$(( RANDOM % 8 ))
+    case $r in
+        0)
+            local a; a=$(new_arena)
+            printf 'error 500\nok 200\nerror 404\nok 200\nerror 500\nok 301\n' > "$a/http.log"
+            run_linux_challenge \
+                "Count HTTP errors" \
+                "'http.log' has status lines. Count lines containing 'error' and write the number to 'n.txt'." \
+                "$a" \
+                '[[ $(tr -d " \t\n" < n.txt) -eq 3 ]]' \
+                "grep -c 'error' http.log > n.txt  (grep -c counts matches)" \
+                "grep -c 'error' http.log > n.txt" \
+                15
+            ;;
+        1)
+            local a; a=$(new_arena)
+            mkdir -p "$a/src/lib" "$a/src/bin"
+            printf 'lib\n' > "$a/src/lib/util.py"
+            printf 'bin\n' > "$a/src/bin/run.py"
+            printf 'root\n' > "$a/src/main.py"
+            run_linux_challenge \
+                "Count all Python files" \
+                "How many .py files exist in the src/ tree?\nWrite the count to 'pycount.txt'." \
+                "$a" \
+                '[[ $(tr -d " \t\n" < pycount.txt) -eq 3 ]]' \
+                "find src/ -name '*.py' | wc -l | tr -d ' ' > pycount.txt" \
+                "find src/ -name '*.py' | wc -l | tr -d ' ' > pycount.txt" \
+                20
+            ;;
+        2)
+            local a; a=$(new_arena)
+            printf '3\n1\n4\n1\n5\n9\n2\n6\n' > "$a/nums.txt"
+            run_linux_challenge \
+                "Sort numbers numerically" \
+                "'nums.txt' contains numbers, one per line.\nSort them numerically (not lexicographically) and write to 'sorted.txt'." \
+                "$a" \
+                '[[ $(head -1 sorted.txt) -eq 1 ]] && [[ $(tail -1 sorted.txt) -eq 9 ]]' \
+                "sort -n nums.txt > sorted.txt  (-n = numeric sort)" \
+                "sort -n nums.txt > sorted.txt" \
+                15
+            ;;
+        3)
+            local a; a=$(new_arena)
+            printf 'alice:admin:1000\nbob:user:1001\ncarol:admin:1002\n' > "$a/passwd.txt"
+            run_linux_challenge \
+                "Extract usernames from passwd-style file" \
+                "'passwd.txt' is colon-separated: name:role:uid.\nExtract just the usernames (first column) into 'users.txt'." \
+                "$a" \
+                'grep -qx "alice" users.txt && grep -qx "bob" users.txt && ! grep -q "admin" users.txt' \
+                "cut -d':' -f1 passwd.txt > users.txt" \
+                "cut -d':' -f1 passwd.txt > users.txt" \
+                15
+            ;;
+        4)
+            local a; a=$(new_arena)
+            printf 'this IS a Test\n' > "$a/mixed.txt"
+            run_linux_challenge \
+                "Convert to lowercase" \
+                "'mixed.txt' has mixed-case text.\nConvert the entire file to lowercase and write to 'lower.txt'." \
+                "$a" \
+                'grep -qx "this is a test" lower.txt' \
+                "tr '[:upper:]' '[:lower:]' < mixed.txt > lower.txt" \
+                "tr '[:upper:]' '[:lower:]' < mixed.txt > lower.txt" \
+                15
+            ;;
+        5)
+            local a; a=$(new_arena)
+            cat > "$a/report.txt" << 'EOF'
+HEADER LINE
+data line one
+data line two
+FOOTER LINE
+EOF
+            run_linux_challenge \
+                "Extract middle lines with sed" \
+                "'report.txt' has 4 lines. Print only lines 2 and 3 to 'body.txt'.\n\n${DIM}Tip: sed -n '2,3p' file${RESET}" \
+                "$a" \
+                '[[ $(wc -l < body.txt | tr -d " ") -eq 2 ]] && grep -q "data line one" body.txt && ! grep -q "HEADER" body.txt' \
+                "sed -n '2,3p' report.txt > body.txt" \
+                "sed -n '2,3p' report.txt > body.txt" \
+                20
+            ;;
+        6)
+            local a; a=$(new_arena)
+            printf 'foo\nbar\nfoo\nbaz\nfoo\nbar\n' > "$a/items.txt"
+            run_linux_challenge \
+                "Find the most common line" \
+                "'items.txt' has repeated entries.\nFind the most-frequently-occurring line and write it to 'top.txt'." \
+                "$a" \
+                'grep -qx "foo" top.txt' \
+                "sort items.txt | uniq -c | sort -rn | head -1 | awk '{print \$2}' > top.txt" \
+                "sort items.txt | uniq -c | sort -rn | head -1 | awk '{print \$2}' > top.txt" \
+                25
+            ;;
+        7)
+            local a; a=$(new_arena)
+            mkdir -p "$a/notes"
+            printf 'TODO: fix bug\nDone: deploy\nTODO: write tests\n' > "$a/notes/dev.txt"
+            printf 'TODO: review PR\nDone: standup\n'                  > "$a/notes/mgmt.txt"
+            run_linux_challenge \
+                "Search recursively for TODOs" \
+                "The 'notes/' directory has text files.\nFind all lines containing 'TODO' across all files.\nWrite just the matching lines (no filenames) to 'todos.txt'." \
+                "$a" \
+                '[[ -f todos.txt ]] && grep -c "TODO" todos.txt | grep -q "3"' \
+                "grep -rh 'TODO' notes/ > todos.txt  (-h suppresses filenames)" \
+                "grep -rh 'TODO' notes/ > todos.txt" \
+                20
+            ;;
+    esac
+}
+
+lesson_bash_scripting() {
+    header
+    center "${BOLD}${YELLOW}── LESSON 9: Bash Scripting (Bash Cookbook) ──${RESET}"
+    echo
+    printf "  Writing scripts that do real work:\n\n"
+    printf "  ${CYAN}VAR=value${RESET}                    assign variable (no spaces around =)\n"
+    printf "  ${CYAN}\${VAR}${RESET}                      expand variable\n"
+    printf "  ${CYAN}\$1 \$2 \$@${RESET}                   positional args / all args\n"
+    printf "  ${CYAN}if [[ cond ]]; then ... fi${RESET}   conditional\n"
+    printf "  ${CYAN}[[ -f f ]] [-d d] [-z s]${RESET}     file exists / dir / empty string\n"
+    printf "  ${CYAN}for item in list; do ... done${RESET} for loop\n"
+    printf "  ${CYAN}for f in *.txt; do ... done${RESET}  glob loop\n"
+    printf "  ${CYAN}while [[ cond ]]; do ... done${RESET} while loop\n"
+    printf "  ${CYAN}fname() { ...; }${RESET}             define function\n"
+    printf "  ${CYAN}\${var##*/}${RESET}                   strip longest leading */  (basename)\n"
+    printf "  ${CYAN}\${var%.*}${RESET}                    strip shortest trailing .* (no extension)\n"
+    printf "  ${CYAN}\${var/old/new}${RESET}               replace first match\n"
+    printf "  ${CYAN}\$?${RESET}                           exit status of last command\n"
+    printf "  ${CYAN}exit N${RESET}                       exit script with code N\n"
+    echo
+    printf "  ${DIM}Based on: Bash Cookbook by Carl Albing & JP Vossen (O'Reilly)${RESET}\n"
+    echo
+    press_enter
+
+    # Challenge 1: for loop over files
+    local a1; a1=$(new_arena)
+    printf 'notes\n'  > "$a1/notes.txt"
+    printf 'todo\n'   > "$a1/todo.txt"
+    printf 'ideas\n'  > "$a1/ideas.txt"
+    printf 'ignore\n' > "$a1/data.csv"
+
+    run_linux_challenge \
+        "Loop over .txt files" \
+        "Write a script 'list.sh' that uses a for loop to print\nthe name of each .txt file in the current directory, one per line.\n\n${DIM}Tip: for f in *.txt; do echo \"\$f\"; done${RESET}" \
+        "$a1" \
+        '[[ -f list.sh ]] && bash list.sh | grep -q "notes.txt" && bash list.sh | grep -q "todo.txt" && ! bash list.sh | grep -q "data.csv"' \
+        "for f in *.txt; do echo \"\$f\"; done  — wrap in a script file" \
+        'for f in *.txt; do echo "$f"; done  > list.sh  (as a script)' \
+        20
+
+    # Challenge 2: if/elif/else with argument
+    local a2; a2=$(new_arena)
+
+    run_linux_challenge \
+        "Grade classifier script" \
+        "Write a script 'grade.sh' that takes a score as \$1 and prints:\n  \"pass\" if score >= 60\n  \"fail\" if score < 60\n\nExample: bash grade.sh 75  →  pass\n         bash grade.sh 45  →  fail" \
+        "$a2" \
+        '[[ -f grade.sh ]] && [[ $(bash grade.sh 75) == "pass" ]] && [[ $(bash grade.sh 45) == "fail" ]] && [[ $(bash grade.sh 60) == "pass" ]]' \
+        'if [[ $1 -ge 60 ]]; then echo "pass"; else echo "fail"; fi' \
+        'if [[ $1 -ge 60 ]]; then echo "pass"; else echo "fail"; fi' \
+        20
+
+    # Challenge 3: while loop counter
+    local a3; a3=$(new_arena)
+
+    run_linux_challenge \
+        "Countdown script" \
+        "Write a script 'countdown.sh' that prints numbers from 5 down to 1,\none per line, using a while loop." \
+        "$a3" \
+        '[[ -f countdown.sh ]] && [[ $(bash countdown.sh | head -1) -eq 5 ]] && [[ $(bash countdown.sh | tail -1) -eq 1 ]] && [[ $(bash countdown.sh | wc -l | tr -d " ") -eq 5 ]]' \
+        'i=5; while [[ $i -ge 1 ]]; do echo $i; ((i--)); done' \
+        'i=5; while [[ $i -ge 1 ]]; do echo $i; ((i--)); done' \
+        20
+
+    # Challenge 4: parameter expansion — strip path/extension
+    local a4; a4=$(new_arena)
+    cat > "$a4/paths.txt" << 'EOF'
+/home/alice/docs/report.pdf
+/var/log/app/server.log
+/tmp/build/output.tar.gz
+EOF
+
+    run_linux_challenge \
+        "Extract basenames without extensions" \
+        "'paths.txt' has full file paths, one per line.\nWrite a script 'stem.sh' that reads each line and prints just the\nfilename without its extension (e.g. 'report', 'server', 'output').\n\n${DIM}Tip: \${f##*/} strips the path; \${base%%.*} strips all extensions${RESET}" \
+        "$a4" \
+        '[[ -f stem.sh ]] && bash stem.sh < paths.txt | grep -qx "report" && bash stem.sh < paths.txt | grep -qx "server" && ! bash stem.sh < paths.txt | grep -q "/"' \
+        'while IFS= read -r f; do base="${f##*/}"; echo "${base%%.*}"; done' \
+        'while IFS= read -r f; do base="${f##*/}"; echo "${base%%.*}"; done' \
+        25
+
+    # Challenge 5: function with return value via echo
+    local a5; a5=$(new_arena)
+
+    run_linux_challenge \
+        "Define and call a function" \
+        "Write a script 'greet.sh' that defines a function 'greet()'\nwhich takes one argument (a name) and prints \"Hello, <name>!\".\nThe script should call greet with the value of \$1.\n\nExample: bash greet.sh World  →  Hello, World!" \
+        "$a5" \
+        '[[ -f greet.sh ]] && [[ $(bash greet.sh World) == "Hello, World!" ]] && [[ $(bash greet.sh Alice) == "Hello, Alice!" ]]' \
+        'greet() { echo "Hello, $1!"; }; greet "$1"' \
+        'greet() { echo "Hello, $1!"; }; greet "$1"' \
+        20
+
+    # Challenge 6: exit codes and error handling
+    local a6; a6=$(new_arena)
+    printf 'exists\n' > "$a6/present.txt"
+
+    run_linux_challenge \
+        "Check file existence and exit cleanly" \
+        "Write a script 'check.sh' that:\n  - exits 0 and prints \"found\" if the file given as \$1 exists\n  - exits 1 and prints \"missing\" if it does not\n\nExample: bash check.sh present.txt  →  found  (exit 0)\n         bash check.sh ghost.txt    →  missing (exit 1)" \
+        "$a6" \
+        '[[ -f check.sh ]] && [[ $(bash check.sh present.txt) == "found" ]] && bash check.sh present.txt; [[ $? -eq 0 ]] && bash check.sh ghost.txt; [[ $? -eq 1 ]]' \
+        'if [[ -f "$1" ]]; then echo "found"; exit 0; else echo "missing"; exit 1; fi' \
+        'if [[ -f "$1" ]]; then echo "found"; exit 0; else echo "missing"; exit 1; fi' \
+        25
+}
+
+# ── Quick reference ───────────────────────────────────────────────────────────
+
+quick_reference() {
+    header
+    center "${BOLD}${YELLOW}── QUICK REFERENCE ──${RESET}"
+    echo
+    printf "  ${BOLD}${CYAN}NAVIGATION${RESET}                            ${BOLD}${CYAN}FILE OPS${RESET}\n"
+    printf "  ${CYAN}ls -la${RESET}     list w/ hidden           ${CYAN}cp src dst${RESET}     copy\n"
+    printf "  ${CYAN}pwd${RESET}        print dir                ${CYAN}mv src dst${RESET}     move/rename\n"
+    printf "  ${CYAN}cd -${RESET}       previous dir             ${CYAN}rm -r dir${RESET}      remove recursively\n"
+    printf "  ${CYAN}find . -name${RESET} search by name         ${CYAN}mkdir -p a/b/c${RESET} create nested\n"
+    printf "  ${CYAN}find . -type f${RESET} files only           ${CYAN}touch file${RESET}     create/update\n"
+    echo
+    printf "  ${BOLD}${CYAN}TEXT PROCESSING${RESET}                       ${BOLD}${CYAN}REDIRECTION${RESET}\n"
+    printf "  ${CYAN}grep 'p' f${RESET}  match lines             ${CYAN}cmd > f${RESET}        write stdout\n"
+    printf "  ${CYAN}grep -v${RESET}     invert match            ${CYAN}cmd >> f${RESET}       append stdout\n"
+    printf "  ${CYAN}sort -n${RESET}     numeric sort            ${CYAN}cmd 2>/dev/null${RESET} discard errors\n"
+    printf "  ${CYAN}sort|uniq -c${RESET} count dupes            ${CYAN}cmd1|cmd2${RESET}      pipe\n"
+    printf "  ${CYAN}cut -d, -f2${RESET} csv field 2             ${CYAN}tee file${RESET}       split to file+stdout\n"
+    printf "  ${CYAN}wc -l${RESET}       count lines\n"
+    echo
+    printf "  ${BOLD}${CYAN}PERMISSIONS${RESET}                           ${BOLD}${CYAN}ARCHIVES${RESET}\n"
+    printf "  ${CYAN}chmod +x f${RESET}   add execute            ${CYAN}tar cvf a.tar dir${RESET}  create\n"
+    printf "  ${CYAN}chmod 644 f${RESET}  rw-r--r--              ${CYAN}tar xvf a.tar${RESET}      extract\n"
+    printf "  ${CYAN}chmod 755 f${RESET}  rwxr-xr-x              ${CYAN}tar czvf a.tar.gz${RESET}  create+gzip\n"
+    printf "  ${CYAN}chmod 700 f${RESET}  rwx------              ${CYAN}tar tzf a.tar.gz${RESET}   list\n"
+    echo
+    printf "  ${BOLD}${CYAN}FIND + XARGS${RESET}                          ${BOLD}${CYAN}SED & AWK${RESET}\n"
+    printf "  ${CYAN}find . -delete${RESET}  delete results       ${CYAN}sed 's/a/b/g' f${RESET}  replace\n"
+    printf "  ${CYAN}find . -exec cmd {} +${RESET}               ${CYAN}sed '/pat/d' f${RESET}    delete lines\n"
+    printf "  ${CYAN}find . | xargs grep${RESET}                 ${CYAN}awk '{print \$2}'${RESET}  field 2\n"
+    printf "  ${CYAN}xargs -I{} cmd {}${RESET}                   ${CYAN}awk '\$3>10'${RESET}       filter rows\n"
+    printf "                                       ${CYAN}awk '{s+=\$1}END{print s}'${RESET}\n"
+    echo
+    printf "  ${BOLD}${CYAN}BASH SCRIPTING${RESET}\n"
+    printf "  ${CYAN}VAR=val${RESET}           assign               ${CYAN}\$1 \$@ \$#${RESET}       args\n"
+    printf "  ${CYAN}if [[ -f f ]]; then${RESET}                   ${CYAN}\${v##*/}${RESET}        strip path\n"
+    printf "  ${CYAN}for f in *.txt; do${RESET}                    ${CYAN}\${v%.*}${RESET}         strip extension\n"
+    printf "  ${CYAN}while [[ cond ]]; do${RESET}                  ${CYAN}\${v/a/b}${RESET}        replace\n"
+    printf "  ${CYAN}fname() { ...; }${RESET}  define function      ${CYAN}exit N${RESET}          exit with code\n"
+    printf "  ${CYAN}\$?${RESET}                last exit status     ${CYAN}set -euo pipefail${RESET}\n"
+    echo
+    press_enter
+}
+
+# ── Main menu ─────────────────────────────────────────────────────────────────
+
+show_menu() {
+    header
+    printf "  ${BOLD}${WHITE}LESSONS${RESET}\n\n"
+    printf "  ${CYAN}1${RESET}  Navigation & Exploration  ${DIM}ls  find  pwd  cd${RESET}\n"
+    printf "  ${CYAN}2${RESET}  File Operations           ${DIM}cp  mv  rm  mkdir  touch  head  tail${RESET}\n"
+    printf "  ${CYAN}3${RESET}  Text Processing           ${DIM}grep  sort  uniq  wc  cut${RESET}\n"
+    printf "  ${CYAN}4${RESET}  Streams & Redirection     ${DIM}>  >>  |  2>  tee  xargs${RESET}\n"
+    printf "  ${CYAN}5${RESET}  Permissions               ${DIM}chmod  ls -l  find -perm${RESET}\n"
+    printf "  ${CYAN}6${RESET}  Archives & Compression    ${DIM}tar  gzip  zip${RESET}\n"
+    printf "  ${CYAN}7${RESET}  find & xargs              ${DIM}-exec  -delete  -size  pipelines${RESET}\n"
+    printf "  ${CYAN}8${RESET}  sed & awk                 ${DIM}substitute  delete  columns  filter${RESET}\n"
+    printf "  ${CYAN}9${RESET}  Bash Scripting            ${DIM}variables  loops  if  functions  exit codes${RESET}\n\n"
+    printf "  ${CYAN}r${RESET}  Random Challenge          ${DIM}(grab bag)${RESET}\n"
+    printf "  ${CYAN}?${RESET}  Quick Reference\n"
+    printf "  ${CYAN}q${RESET}  Quit\n\n"
+    printf "  ${DIM}▶ ${RESET}"
+}
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
+main() {
+    clear_screen
+    echo
+    center "${BOLD}${BLUE}>_  LINUX DOJO  _<${RESET}"
+    echo
+    center "${DIM}Practice Linux commands. Master the shell.${RESET}"
+    echo
+    printf "  How it works:\n\n"
+    printf "  1. Choose a lesson from the menu.\n"
+    printf "  2. Read the challenge — a temporary working directory is set up for you.\n"
+    printf "  3. Press Enter — a shell opens inside that directory.\n"
+    printf "  4. Run Linux commands to complete the challenge.\n"
+    printf "  5. Type ${CYAN}exit${RESET} when done — your work is checked automatically.\n\n"
+    printf "  ${DIM}Press h before opening the shell to get a hint (half points).${RESET}\n"
+    printf "  ${DIM}Press s to skip a challenge.${RESET}\n"
+    printf "  ${DIM}All arenas are isolated temp directories — nothing on your system is affected.${RESET}\n"
+    echo
+    press_enter
+
+    while true; do
+        show_menu
+        local choice
+        read -r choice
+
+        case "$choice" in
+            1) lesson_navigation ;;
+            2) lesson_file_operations ;;
+            3) lesson_text_processing ;;
+            4) lesson_redirection ;;
+            5) lesson_permissions ;;
+            6) lesson_archives ;;
+            7) lesson_find_xargs ;;
+            8) lesson_sed_awk ;;
+            9) lesson_bash_scripting ;;
+            r|R) random_challenge ;;
+            '?') quick_reference ;;
+            q|Q)
+                clear_screen
+                echo
+                center "${BOLD}${YELLOW}Thanks for training at Linux Dojo!${RESET}"
+                echo
+                center "Final score:           ${WHITE}${BOLD}${SCORE}${RESET}"
+                center "Challenges completed:  ${WHITE}${BOLD}${CHALLENGES_DONE}${RESET}"
+                center "Hints used:            ${WHITE}${BOLD}${HINTS_USED}${RESET}"
+                center "Level reached:         ${WHITE}${BOLD}${LEVEL}${RESET}"
+                echo
+                center "${DIM}The best way to learn Linux is to use Linux. Keep practicing.${RESET}"
+                echo
+                exit 0
+                ;;
+            *) ;;
+        esac
+    done
+}
+
+main "$@"
