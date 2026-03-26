@@ -802,6 +802,105 @@ lesson_find_xargs() {
         "find . -maxdepth 1 -type f -size +1k | xargs -I{} basename {} > big.txt" \
         "find . -maxdepth 1 -type f -size +1k -exec basename {} \\; > big.txt" \
         25
+
+    # Challenge 5: case-insensitive name search
+    local a5; a5=$(new_arena)
+    printf 'image data\n' > "$a5/Photo.JPG"
+    printf 'image data\n' > "$a5/vacation.jpg"
+    printf 'image data\n' > "$a5/BANNER.JPG"
+    printf 'not an image\n' > "$a5/notes.txt"
+
+    run_linux_challenge \
+        "Case-insensitive file search" \
+        "The directory has .jpg/.JPG files with mixed casing.\nUse find with a case-insensitive match to list all of them.\nWrite their basenames (one per line) to 'images.txt'." \
+        "$a5" \
+        '[[ -f images.txt ]] && grep -qi "Photo.JPG" images.txt && grep -qi "vacation.jpg" images.txt && grep -qi "BANNER.JPG" images.txt && ! grep -q "notes.txt" images.txt' \
+        "find . -iname '*.jpg' -exec basename {} \\; > images.txt" \
+        "find . -iname '*.jpg' -exec basename {} \\; > images.txt" \
+        15
+
+    # Challenge 6: find by modification time
+    local a6; a6=$(new_arena)
+    printf 'stale\n' > "$a6/old.log"
+    touch -t "$(date -v-10d '+%Y%m%d%H%M' 2>/dev/null || date -d '10 days ago' '+%Y%m%d%H%M')" "$a6/old.log" 2>/dev/null || true
+    printf 'fresh\n' > "$a6/recent.log"
+    printf 'data\n'  > "$a6/data.txt"
+
+    run_linux_challenge \
+        "Find recently modified files" \
+        "Some files here were modified very recently; 'old.log' was last touched 10 days ago.\nFind all files modified in the last 2 days and write their basenames to 'new_files.txt'." \
+        "$a6" \
+        '[[ -f new_files.txt ]] && grep -q "recent.log" new_files.txt && ! grep -q "old.log" new_files.txt' \
+        "find . -type f -mtime -2 -exec basename {} \\; > new_files.txt" \
+        "find . -type f -mtime -2 -exec basename {} \\; > new_files.txt" \
+        20
+
+    # Challenge 7: find newer than a reference file
+    local a7; a7=$(new_arena)
+    printf 'reference\n' > "$a7/baseline.txt"
+    sleep 1
+    printf 'after\n' > "$a7/updated.conf"
+    printf 'after\n' > "$a7/new_feature.py"
+
+    run_linux_challenge \
+        "Find files newer than a reference" \
+        "'baseline.txt' was created first.\nFind all files that are newer than 'baseline.txt' and write their basenames to 'changed.txt'." \
+        "$a7" \
+        '[[ -f changed.txt ]] && grep -q "updated.conf" changed.txt && grep -q "new_feature.py" changed.txt && ! grep -q "baseline.txt" changed.txt' \
+        "find . -newer baseline.txt -type f -exec basename {} \\; > changed.txt" \
+        "find . -newer baseline.txt -type f -exec basename {} \\; > changed.txt" \
+        20
+
+    # Challenge 8: find by permission
+    local a8; a8=$(new_arena)
+    printf '#!/bin/bash\necho run\n' > "$a8/runner.sh"
+    chmod 755 "$a8/runner.sh"
+    printf 'config\n'               > "$a8/config.cfg"
+    chmod 644 "$a8/config.cfg"
+    printf '#!/bin/bash\necho go\n' > "$a8/start.sh"
+    chmod 755 "$a8/start.sh"
+
+    run_linux_challenge \
+        "Find executable files" \
+        "Some files here are executable, others are not.\nFind all regular files that have the user-execute bit set\nand write their basenames to 'executables.txt'." \
+        "$a8" \
+        '[[ -f executables.txt ]] && grep -q "runner.sh" executables.txt && grep -q "start.sh" executables.txt && ! grep -q "config.cfg" executables.txt' \
+        "find . -type f -perm -u+x -exec basename {} \\; > executables.txt" \
+        "find . -type f -perm -u+x -exec basename {} \\; > executables.txt" \
+        20
+
+    # Challenge 9: limit search depth
+    local a9; a9=$(new_arena)
+    mkdir -p "$a9/level1/level2/level3"
+    printf 'top\n'   > "$a9/top.txt"
+    printf 'one\n'   > "$a9/level1/one.txt"
+    printf 'deep\n'  > "$a9/level1/level2/two.txt"
+    printf 'deeper\n' > "$a9/level1/level2/level3/three.txt"
+
+    run_linux_challenge \
+        "Search only the top two levels" \
+        "Files are nested across multiple directory levels.\nFind all .txt files within a maximum depth of 2 (top dir + one level down)\nand write their basenames to 'shallow.txt'." \
+        "$a9" \
+        '[[ -f shallow.txt ]] && grep -q "top.txt" shallow.txt && grep -q "one.txt" shallow.txt && ! grep -q "two.txt" shallow.txt && ! grep -q "three.txt" shallow.txt' \
+        "find . -maxdepth 2 -name '*.txt' -exec basename {} \\; > shallow.txt" \
+        "find . -maxdepth 2 -name '*.txt' -exec basename {} \\; > shallow.txt" \
+        20
+
+    # Challenge 10: combine expressions (OR)
+    local a10; a10=$(new_arena)
+    printf 'script\n'  > "$a10/deploy.sh"
+    printf 'module\n'  > "$a10/app.py"
+    printf 'config\n'  > "$a10/settings.cfg"
+    printf 'readme\n'  > "$a10/README.md"
+
+    run_linux_challenge \
+        "Find files matching either extension" \
+        "The directory has .sh, .py, .cfg, and .md files.\nFind all files that are either .sh OR .py\nand write their basenames to 'code_files.txt'." \
+        "$a10" \
+        '[[ -f code_files.txt ]] && grep -q "deploy.sh" code_files.txt && grep -q "app.py" code_files.txt && ! grep -q "settings.cfg" code_files.txt && ! grep -q "README.md" code_files.txt' \
+        "find . \\( -name '*.sh' -o -name '*.py' \\) -exec basename {} \\; > code_files.txt" \
+        "find . \\( -name '*.sh' -o -name '*.py' \\) -exec basename {} \\; > code_files.txt" \
+        25
 }
 
 lesson_sed_awk() {
