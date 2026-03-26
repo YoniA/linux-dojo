@@ -36,8 +36,10 @@ During a challenge:
 | 10 | Process & System — `ps`, `kill`, `date`, `du`, `df`, `id`, `env` |
 | 11 | File Comparison — `diff`, `patch`, `comm` |
 | 12 | File Integrity — `sha256sum`, `shasum`, `md5sum`, `file` |
+| 13 | Pipelines — `tr`, `sort -k`, `uniq -d`, word frequency |
 | r | Random challenge from any category |
 | ? | Quick reference guide |
+| g | Command glossary — detailed manual for every command |
 
 ## The `find` Command
 

@@ -1449,6 +1449,30 @@ EOF
         'if [[ -f "$1" ]]; then echo "found"; exit 0; else echo "missing"; exit 1; fi' \
         'if [[ -f "$1" ]]; then echo "found"; exit 0; else echo "missing"; exit 1; fi' \
         25
+
+    # Challenge 7: case statement (inspired by Ch6 positional params)
+    local a7; a7=$(new_arena)
+
+    run_linux_challenge \
+        "case statement dispatcher" \
+        "Write a script 'season.sh' that takes a month number as \$1 and\nprints the season using a case statement:\n  12, 1, 2   → winter\n  3, 4, 5    → spring\n  6, 7, 8    → summer\n  9, 10, 11  → autumn\n\nExample: bash season.sh 7  →  summer\n         bash season.sh 12 →  winter" \
+        "$a7" \
+        '[[ -f season.sh ]] && [[ $(bash season.sh 7) == "summer" ]] && [[ $(bash season.sh 12) == "winter" ]] && [[ $(bash season.sh 3) == "spring" ]] && [[ $(bash season.sh 10) == "autumn" ]]' \
+        'case $1 in 12|1|2) echo winter;; 3|4|5) echo spring;; 6|7|8) echo summer;; 9|10|11) echo autumn;; esac' \
+        'case $1 in 12|1|2) echo winter;; 3|4|5) echo spring;; 6|7|8) echo summer;; *) echo autumn;; esac' \
+        20
+
+    # Challenge 8: arithmetic expansion $(( )) (Ch6.1.3)
+    local a8; a8=$(new_arena)
+
+    run_linux_challenge \
+        "Arithmetic expansion" \
+        "Write a script 'calc.sh' that takes two numbers as \$1 and \$2 and\nprints four lines:\n  sum: <result>\n  diff: <result>\n  product: <result>\n  quotient: <result>   (integer division)\n\nExample: bash calc.sh 10 3\n  sum: 13\n  diff: 7\n  product: 30\n  quotient: 3" \
+        "$a8" \
+        '[[ -f calc.sh ]] && bash calc.sh 10 3 | grep -q "sum: 13" && bash calc.sh 10 3 | grep -q "diff: 7" && bash calc.sh 10 3 | grep -q "product: 30" && bash calc.sh 10 3 | grep -q "quotient: 3"' \
+        'echo "sum: $(($1+$2))"; echo "diff: $(($1-$2))"; echo "product: $(($1*$2))"; echo "quotient: $(($1/$2))"' \
+        'echo "sum: $(($1+$2))"; echo "diff: $(($1-$2))"; echo "product: $(($1*$2))"; echo "quotient: $(($1/$2))"' \
+        20
 }
 
 lesson_integrity() {
@@ -1552,6 +1576,1299 @@ lesson_integrity() {
     unset -f _sha256 _sha256c
 }
 
+lesson_pipelines() {
+    header
+    center "${BOLD}${YELLOW}── LESSON 13: Pipelines ──${RESET}"
+    echo
+    printf "  Chain commands into data-processing pipelines:\n\n"
+    printf "  ${CYAN}tr 'A-Z' 'a-z'${RESET}              translate uppercase to lowercase\n"
+    printf "  ${CYAN}tr -s ' '${RESET}                   squeeze repeated spaces to one\n"
+    printf "  ${CYAN}tr -cs 'A-Za-z' '\\n'${RESET}        keep only letters, one per line\n"
+    printf "  ${CYAN}tr -d '\\n'${RESET}                  delete newlines\n"
+    printf "  ${CYAN}sort -t: -k1,1${RESET}              sort colon-delimited, field 1\n"
+    printf "  ${CYAN}sort -t, -k2,2n${RESET}             sort CSV, field 2 numerically\n"
+    printf "  ${CYAN}sort -k1,1 -k2,2n${RESET}           multi-key sort\n"
+    printf "  ${CYAN}sort | uniq -c | sort -rn${RESET}   word/line frequency\n"
+    printf "  ${CYAN}uniq -d${RESET}                     only duplicate lines\n"
+    printf "  ${CYAN}uniq -u${RESET}                     only unique lines\n"
+    echo
+    printf "  ${DIM}Classic pipeline (McIlroy, 1986 — count word frequency):${RESET}\n"
+    printf "  ${CYAN}tr -cs 'A-Za-z' '\\n' | tr 'A-Z' 'a-z' | sort | uniq -c | sort -k1,1rn | head${RESET}\n"
+    echo
+    printf "  ${DIM}Inspired by: Classic Shell Scripting (Robbins & Beebe, O'Reilly)${RESET}\n"
+    echo
+    press_enter
+
+    # Challenge 1: tr lowercase
+    local a1; a1=$(new_arena)
+    printf 'Hello World\nFOO BAR BAZ\nMixed Case Line\n' > "$a1/shout.txt"
+
+    run_linux_challenge \
+        "Lowercase with tr" \
+        "'shout.txt' is in mixed/uppercase.\nConvert every letter to lowercase and write the result to 'quiet.txt'.\n\n${DIM}Tip: tr 'A-Z' 'a-z' < shout.txt${RESET}" \
+        "$a1" \
+        '[[ -f quiet.txt ]] && grep -q "hello world" quiet.txt && ! grep -q "[A-Z]" quiet.txt' \
+        "tr 'A-Z' 'a-z'" \
+        "tr 'A-Z' 'a-z' < shout.txt > quiet.txt" \
+        15
+
+    # Challenge 2: tr squeeze spaces
+    local a2; a2=$(new_arena)
+    printf 'one   two     three\nfoo  bar\n' > "$a2/messy.txt"
+
+    run_linux_challenge \
+        "Squeeze spaces with tr" \
+        "'messy.txt' has words separated by multiple spaces.\nWrite a version with each run of spaces reduced to a single space\nto 'clean.txt'.\n\n${DIM}Tip: tr -s ' ' < messy.txt${RESET}" \
+        "$a2" \
+        '[[ -f clean.txt ]] && ! grep -P "  " clean.txt && grep -q "one two three" clean.txt' \
+        "tr -s ' '" \
+        "tr -s ' ' < messy.txt > clean.txt" \
+        15
+
+    # Challenge 3: sort -t -k numeric field (inspired by passwd-file examples)
+    local a3; a3=$(new_arena)
+    cat > "$a3/scores.csv" << 'EOF'
+alice,30,engineer
+bob,25,designer
+carol,35,manager
+dave,28,engineer
+EOF
+
+    run_linux_challenge \
+        "Sort CSV by numeric field" \
+        "'scores.csv' has columns: name, age, role.\nSort the file by age (field 2) in ascending numeric order\nand write the result to 'by_age.csv'.\n\n${DIM}Tip: sort -t, -k2,2n scores.csv${RESET}" \
+        "$a3" \
+        '[[ -f by_age.csv ]] && [[ $(head -1 by_age.csv | cut -d, -f1) == "bob" ]] && [[ $(tail -1 by_age.csv | cut -d, -f1) == "carol" ]]' \
+        "sort -t, -k2,2n scores.csv" \
+        "sort -t, -k2,2n scores.csv > by_age.csv" \
+        20
+
+    # Challenge 4: uniq -d to find duplicates
+    local a4; a4=$(new_arena)
+    cat > "$a4/events.txt" << 'EOF'
+login
+logout
+login
+error
+login
+error
+timeout
+logout
+EOF
+
+    run_linux_challenge \
+        "Find duplicate events" \
+        "'events.txt' has event names, one per line.\nWrite only the lines that appear more than once (duplicates)\nto 'dupes.txt'. Each duplicate name should appear once.\n\n${DIM}Tip: sort events.txt | uniq -d${RESET}" \
+        "$a4" \
+        '[[ -f dupes.txt ]] && grep -qx "login" dupes.txt && grep -qx "error" dupes.txt && ! grep -qx "timeout" dupes.txt' \
+        "sort events.txt | uniq -d" \
+        "sort events.txt | uniq -d > dupes.txt" \
+        20
+
+    # Challenge 5: Word frequency pipeline (McIlroy's classic)
+    local a5; a5=$(new_arena)
+    cat > "$a5/prose.txt" << 'EOF'
+the quick brown fox jumps over the lazy dog
+the dog barked at the fox
+the fox ran away quickly
+EOF
+
+    run_linux_challenge \
+        "Top word frequencies" \
+        "'prose.txt' contains some prose.\nWrite the top 3 most-frequent words with their counts to 'top.txt'.\nFormat: '  N word' (like uniq -c outputs), most frequent first.\n\n${DIM}Tip: tr -cs 'A-Za-z' '\\n' | tr 'A-Z' 'a-z' | sort | uniq -c | sort -k1,1rn | head -3${RESET}" \
+        "$a5" \
+        '[[ -f top.txt ]] && [[ $(wc -l < top.txt | tr -d " ") -eq 3 ]] && head -1 top.txt | grep -qE "^\s*[0-9]" && head -1 top.txt | grep -qE "[4-9]|[0-9]{2,}"' \
+        "tr -cs 'A-Za-z' '\\n' | tr 'A-Z' 'a-z' | sort | uniq -c | sort -k1,1rn | head -3" \
+        "tr -cs 'A-Za-z' '\n' < prose.txt | tr 'A-Z' 'a-z' | sort | uniq -c | sort -k1,1rn | head -3 > top.txt" \
+        25
+}
+
+# ── Command glossary ──────────────────────────────────────────────────────────
+
+command_glossary() {
+    # ── helpers ──────────────────────────────────────────────────────────────
+    _hdr()  { printf "\n  ${BOLD}${CYAN}%s${RESET}  —  %s\n\n" "$1" "$2"; }
+    _txt()  { printf "  %s\n" "$1"; }
+    _nl()   { echo; }
+    _sub()  { printf "\n  ${BOLD}%s${RESET}\n" "$1"; }
+    _opt()  { printf "    ${DIM}%-28s${RESET}  %s\n" "$1" "$2"; }
+    _eg()   { printf "    ${GREEN}▶${RESET} ${CYAN}%s${RESET}\n" "$1"; }
+    _tip()  { printf "\n  ${YELLOW}tip:${RESET} %s\n" "$1"; }
+
+    _show_menu() {
+        header
+        center "${BOLD}${YELLOW}── COMMAND GLOSSARY ──${RESET}"
+        echo
+        printf "  Type a command name to read its full entry.\n"
+        printf "  ${DIM}Type ${RESET}q${DIM} to return to the main menu.${RESET}\n"
+        echo
+        local B="${BOLD}${WHITE}" C="${CYAN}" R="${RESET}"
+        printf "  ${B}NAVIGATION${R}               ${B}FILE OPERATIONS${R}        ${B}SEARCH${R}\n"
+        printf "  ${C}ls${R}  ${C}pwd${R}  ${C}cd${R}              ${C}cp${R}  ${C}mv${R}  ${C}rm${R}             ${C}find${R}  ${C}xargs${R}\n"
+        printf "                           ${C}mkdir${R}  ${C}touch${R}\n"
+        echo
+        printf "  ${B}TEXT PROCESSING${R}          ${B}STREAMS & I/O${R}          ${B}PERMISSIONS & ARCHIVES${R}\n"
+        printf "  ${C}grep${R}  ${C}sort${R}  ${C}uniq${R}         ${C}redirect${R}  ${C}tee${R}          ${C}chmod${R}  ${C}tar${R}\n"
+        printf "  ${C}wc${R}  ${C}cut${R}  ${C}tr${R}\n"
+        echo
+        printf "  ${B}SED & AWK${R}                ${B}PROCESS & SYSTEM${R}       ${B}FILE COMPARISON${R}\n"
+        printf "  ${C}sed${R}  ${C}awk${R}                 ${C}ps${R}  ${C}kill${R}  ${C}date${R}       ${C}diff${R}  ${C}patch${R}  ${C}comm${R}\n"
+        printf "                           ${C}du${R}  ${C}df${R}  ${C}id${R}  ${C}env${R}\n"
+        echo
+        printf "  ${B}FILE INTEGRITY${R}           ${B}BASH SCRIPTING${R}\n"
+        printf "  ${C}sha256sum${R}  ${C}shasum${R}        ${C}vars${R}  ${C}test${R}  ${C}case${R}  ${C}arith${R}\n"
+        printf "  ${C}md5sum${R}  ${C}file${R}  ${C}gpg${R}\n"
+        echo
+        printf "  ${DIM}▶ ${RESET}"
+    }
+
+    # ── main loop ─────────────────────────────────────────────────────────────
+    while true; do
+        _show_menu
+        local choice
+        read -r choice
+        [[ -z "$choice" ]] && continue
+        [[ "$choice" == "q" || "$choice" == "Q" ]] && break
+
+        header
+        center "${BOLD}${YELLOW}── COMMAND GLOSSARY ──${RESET}"
+        echo
+
+        case "$choice" in
+
+        # ── NAVIGATION ────────────────────────────────────────────────────────
+        ls)
+            _hdr "ls" "list directory contents"
+            _txt "ls reads one or more directories and prints their contents. Without arguments it"
+            _txt "lists the current directory. By default it sorts alphabetically and omits hidden"
+            _txt "files (those whose name begins with a dot). It is probably the most-used command"
+            _txt "on the command line, yet many users never go beyond the defaults."
+            _sub "Options"
+            _opt "-l"        "long format — one file per line with permissions, link count,"
+            _opt ""          "owner, group, size in bytes, modification date, and name"
+            _opt "-a"        "all — include hidden files (.dotfiles) and . and .."
+            _opt "-A"        "almost-all — hidden files but NOT . and .."
+            _opt "-h"        "human-readable sizes (combine with -l): 4.2K, 1.8M, 3G"
+            _opt "-R"        "recursive — descend into every subdirectory"
+            _opt "-t"        "sort by modification time, newest first"
+            _opt "-S"        "sort by size, largest first"
+            _opt "-r"        "reverse whatever sort is active"
+            _opt "-1"        "one entry per line (useful for piping)"
+            _opt "--color"   "colorize output by file type (usually on by default)"
+            _sub "Examples"
+            _eg "ls -lah                        # everything, readable sizes"
+            _eg "ls -lt *.log                   # logs, newest first"
+            _eg "ls -1 | wc -l                  # count files in current dir"
+            _eg "ls -lhS /var/log | head -10    # 10 largest log files"
+            _tip "The long-format permission string works like: -rwxr-xr-x"
+            _tip "  char 1: file type (- file, d dir, l symlink)"
+            _tip "  chars 2-4: owner perms (r w x)"
+            _tip "  chars 5-7: group perms"
+            _tip "  chars 8-10: others perms"
+            ;;
+
+        pwd)
+            _hdr "pwd" "print working directory"
+            _txt "pwd outputs the absolute path of the shell's current directory. It sounds trivial"
+            _txt "but is indispensable when you are deep in a directory tree, navigating symlinks,"
+            _txt "or writing scripts that must know where they are running."
+            _sub "Options"
+            _opt "-P"   "physical path — resolves all symbolic links"
+            _opt "-L"   "logical path — shows symlinks as-is (default)"
+            _sub "Examples"
+            _eg "pwd"
+            _eg "cd \$(pwd)/subdir    # absolute path to a subdir"
+            _eg "pwd -P              # real path even through symlinks"
+            _tip "The shell keeps the current directory in \$PWD. In scripts,"
+            _tip "'DIR=\$(pwd)' captures it so you can return later with 'cd \"\$DIR\"'."
+            ;;
+
+        cd)
+            _hdr "cd" "change the shell's current directory"
+            _txt "cd is a shell built-in (not an external program) that changes the working"
+            _txt "directory. Every new shell starts in \$HOME. The shell remembers exactly one"
+            _txt "previous directory, reachable with 'cd -'. For tracking a longer history,"
+            _txt "see the bash builtins pushd and popd."
+            _sub "Special arguments"
+            _opt "(no argument)"   "go to \$HOME (same as cd ~)"
+            _opt "-"              "return to the previous directory (toggles back and forth)"
+            _opt "~"              "shorthand for \$HOME, usable inside paths: ~/docs"
+            _opt ".."             "parent directory"
+            _opt "../../other"   "relative paths work as expected"
+            _sub "Examples"
+            _eg "cd /var/log"
+            _eg "cd -                 # jump back to where you just were"
+            _eg "cd ~/projects/myapp  # absolute path using home shorthand"
+            _eg "cd ../..             # two levels up"
+            _tip "If CDPATH is set, 'cd dir' will search those directories too,"
+            _tip "similar to how PATH works for commands."
+            ;;
+
+        # ── FILE OPERATIONS ───────────────────────────────────────────────────
+        cp)
+            _hdr "cp" "copy files or directories"
+            _txt "cp duplicates files or directory trees. The simplest form is 'cp src dst'."
+            _txt "If dst is an existing directory, src is copied inside it. cp does not preserve"
+            _txt "metadata (timestamps, permissions) by default — use -p or -a for that."
+            _sub "Options"
+            _opt "-r"      "recursive — copy entire directory trees"
+            _opt "-p"      "preserve timestamps, permissions, and ownership"
+            _opt "-a"      "archive mode: combines -r -p; the best choice for backups"
+            _opt "-i"      "interactive — prompt before overwriting an existing file"
+            _opt "-n"      "no-clobber — silently skip if destination already exists"
+            _opt "-u"      "update — only copy if source is newer than destination"
+            _opt "-v"      "verbose — print the name of each file as it is copied"
+            _opt "-l"      "hard-link instead of copying (same filesystem only)"
+            _opt "-s"      "create symbolic links instead of copying"
+            _sub "Examples"
+            _eg "cp file.txt backup.txt"
+            _eg "cp -a src/ dst/              # full recursive backup"
+            _eg "cp -ruv src/ dst/            # incremental sync, show progress"
+            _eg "cp *.conf /etc/myapp/        # copy all .conf files into a dir"
+            _tip "cp across different filesystems always does a real copy. Hard-linking"
+            _tip "(-l) is instant and uses no extra disk space, but only within one FS."
+            ;;
+
+        mv)
+            _hdr "mv" "move or rename files"
+            _txt "mv moves a file to a new location or renames it. When source and destination"
+            _txt "are on the same filesystem, the operation is atomic (a directory entry is"
+            _txt "simply re-pointed) and nearly instantaneous regardless of file size."
+            _txt "Across filesystems, mv copies the data and then removes the original."
+            _sub "Options"
+            _opt "-i"   "interactive — prompt before overwriting"
+            _opt "-n"   "no-clobber — do not overwrite existing destination"
+            _opt "-u"   "update — move only if source is newer"
+            _opt "-v"   "verbose"
+            _sub "Examples"
+            _eg "mv old.txt new.txt              # rename"
+            _eg "mv report.txt ~/docs/           # move into a directory"
+            _eg "mv *.log /var/archive/"
+            _eg "mv -i * /dest/                  # warn before clobbering"
+            _tip "To rename many files with a pattern, combine with a loop:"
+            _tip "  for f in *.jpeg; do mv \"\$f\" \"\${f%.jpeg}.jpg\"; done"
+            ;;
+
+        rm)
+            _hdr "rm" "remove files or directories"
+            _txt "rm deletes files permanently. There is no Trash — the data is gone immediately"
+            _txt "(though blocks may be recoverable with forensic tools until overwritten)."
+            _txt "Be especially careful with wildcards: 'rm *.txt' expands before rm runs, and"
+            _txt "a misplaced space ('rm * .txt') can erase everything in the directory."
+            _sub "Options"
+            _opt "-r"   "recursive — remove directories and all their contents"
+            _opt "-f"   "force — no error for missing files; never prompt"
+            _opt "-i"   "interactive — confirm each deletion (safest)"
+            _opt "-I"   "prompt once before removing more than 3 files"
+            _opt "-v"   "verbose — print each filename removed"
+            _sub "Examples"
+            _eg "rm file.txt"
+            _eg "rm -rf build/                 # delete entire directory tree"
+            _eg "rm -i *.tmp                   # confirm each .tmp file"
+            _eg "rm -- -weirdname.txt          # -- ends option parsing"
+            _tip "Safer workflow: 'ls *.log' first to confirm the glob, then 'rm *.log'."
+            _tip "Consider aliasing rm to 'rm -I' or using a trash CLI (trash-cli, etc.)."
+            ;;
+
+        mkdir)
+            _hdr "mkdir" "create directories"
+            _txt "mkdir creates one or more directories. Without -p, every parent directory in"
+            _txt "the path must already exist, and creating a directory that already exists is"
+            _txt "an error. With -p, mkdir creates the entire path and is idempotent."
+            _sub "Options"
+            _opt "-p"         "create parents as needed; no error if directory already exists"
+            _opt "-v"         "print the name of each directory as it is created"
+            _opt "-m MODE"    "set permissions in octal at creation time"
+            _sub "Examples"
+            _eg "mkdir logs"
+            _eg "mkdir -p src/main/java/com/example"
+            _eg "mkdir -p -m 700 ~/.ssh        # create with restricted permissions"
+            _eg "mkdir -p /tmp/test/{a,b,c}    # brace expansion: three subdirs"
+            _tip "The brace expansion trick '{a,b,c}' is a shell feature — not mkdir's."
+            ;;
+
+        touch)
+            _hdr "touch" "create files or update timestamps"
+            _txt "touch has two jobs. If the target file does not exist, it creates an empty file."
+            _txt "If it does exist, it updates the access and modification timestamps to the"
+            _txt "current time without changing the contents. Makefiles rely heavily on touch"
+            _txt "to force rebuilds by making targets appear out-of-date."
+            _sub "Options"
+            _opt "-a"              "update access time only"
+            _opt "-m"              "update modification time only"
+            _opt "-t STAMP"        "set a specific time: [[CC]YY]MMDDhhmm[.ss]"
+            _opt "-r ref"          "copy timestamps from the reference file"
+            _opt "-d 'string'"     "set time from a human-readable string (GNU)"
+            _sub "Examples"
+            _eg "touch newfile.txt"
+            _eg "touch -t 202401011200 marker.txt    # specific date/time"
+            _eg "touch -r reference.txt target.txt   # copy timestamps"
+            _eg "touch file{1..5}.txt                # create 5 files at once"
+            _tip "In scripts, 'touch \"\$file\" || die' is a common pattern to verify"
+            _tip "write permission before doing more expensive work."
+            ;;
+
+        # ── SEARCH ────────────────────────────────────────────────────────────
+        find)
+            _hdr "find" "search the filesystem recursively"
+            _txt "find walks a directory tree and evaluates expressions against every file it"
+            _txt "visits. Unlike shell globs (which only match filenames in one directory),"
+            _txt "find descends into subdirectories, filters by any file attribute, and can"
+            _txt "execute commands on matches. Predicates default to AND; use -o for OR."
+            _sub "Filtering predicates"
+            _opt "-name 'pat'"    "glob match on filename — case-sensitive"
+            _opt "-iname 'pat'"   "same, case-insensitive"
+            _opt "-type f"        "regular files only"
+            _opt "-type d"        "directories only"
+            _opt "-type l"        "symbolic links only"
+            _opt "-size +1M"      "larger than 1 MB  (k=KB M=MB G=GB)"
+            _opt "-size -100k"    "smaller than 100 KB"
+            _opt "-mtime -7"      "modified within the last 7 days"
+            _opt "-mtime +30"     "not modified in over 30 days"
+            _opt "-newer ref"     "modified more recently than file 'ref'"
+            _opt "-perm 644"      "exact permission match"
+            _opt "-perm -u+x"     "user-executable (at minimum; / means any)"
+            _opt "-maxdepth N"    "do not recurse deeper than N levels"
+            _opt "-mindepth N"    "skip the first N levels"
+            _opt "-empty"         "empty files or directories"
+            _sub "Actions"
+            _opt "-print"         "print the path (default action)"
+            _opt "-delete"        "delete matching files"
+            _opt "-exec cmd {} \\;" "run cmd once per file ({} = path)"
+            _opt "-exec cmd {} +" "batch: pass all matches to one cmd invocation"
+            _opt "-print0"        "NUL-terminated output — safe for filenames with spaces"
+            _sub "Combining"
+            _opt "-o"             "OR (lower precedence than implicit AND)"
+            _opt "! / -not"       "negate"
+            _opt "\\( ... \\)"    "group predicates with escaped parentheses"
+            _sub "Examples"
+            _eg "find . -name '*.log' -mtime +7 -delete"
+            _eg "find . -type f -size +100M             # large files"
+            _eg "find . -type f -exec chmod 644 {} +"
+            _eg "find . \\( -name '*.jpg' -o -name '*.png' \\)"
+            _eg "find . -name '*.c' -print0 | xargs -0 grep 'malloc'"
+            _eg "find /tmp -maxdepth 1 -mtime +1 -delete  # clean old tmp files"
+            _tip "Use -print0 with xargs -0 whenever filenames might contain spaces."
+            ;;
+
+        xargs)
+            _hdr "xargs" "build and execute commands from stdin"
+            _txt "xargs reads items from stdin and appends them as arguments to a command."
+            _txt "It is the bridge between pipeline output and commands that don't read stdin."
+            _txt "The key efficiency win: instead of spawning one process per file (as -exec \\;"
+            _txt "does), xargs batches many filenames into a single command invocation."
+            _sub "Options"
+            _opt "-I{}"    "replace {} with each input item; runs command once per item"
+            _opt "-n N"    "pass at most N items per command run (limits batch size)"
+            _opt "-P N"    "run up to N commands in parallel (great for slow operations)"
+            _opt "-0"      "input items delimited by NUL, not newlines (pair with find -print0)"
+            _opt "-r"      "do not run the command if stdin is empty (GNU xargs)"
+            _opt "-t"      "trace: print each command before running it"
+            _opt "-p"      "prompt: ask for confirmation before each run"
+            _sub "Examples"
+            _eg "find . -name '*.tmp' | xargs rm"
+            _eg "cat urls.txt | xargs -I{} curl -O {}"
+            _eg "find . -name '*.c' -print0 | xargs -0 wc -l"
+            _eg "echo 'a b c' | xargs -n1 echo    # one item per line"
+            _eg "find . -name '*.png' | xargs -P4 -I{} convert {} {}.jpg"
+            _tip "Always pair 'find -print0' with 'xargs -0' — this handles filenames"
+            _tip "containing spaces, tabs, or newlines, which plain xargs would split on."
+            ;;
+
+        # ── TEXT PROCESSING ───────────────────────────────────────────────────
+        grep)
+            _hdr "grep" "search for patterns in text"
+            _txt "grep reads lines from files or stdin and prints those that match a pattern."
+            _txt "The name stands for 'globally search a regular expression and print' — it"
+            _txt "originated as a command in the original Unix text editor ed."
+            _txt "grep exits 0 if any match was found, 1 if no match, 2 on error — making it"
+            _txt "useful as a test condition in shell scripts."
+            _sub "Options"
+            _opt "-i"         "case-insensitive: 'Error' matches 'error', 'ERROR', etc."
+            _opt "-v"         "invert: print lines that do NOT match the pattern"
+            _opt "-c"         "count: print the number of matching lines, not the lines"
+            _opt "-l"         "list filenames that contain a match (suppress lines)"
+            _opt "-L"         "list filenames with NO match"
+            _opt "-n"         "prefix each match with its line number"
+            _opt "-r / -R"    "recursive: search all files under a directory"
+            _opt "-E"         "Extended RE: enables +, ?, |, () without backslash"
+            _opt "-F"         "fixed string: no regex, just literal text (fast)"
+            _opt "-o"         "print only the matching portion of each line"
+            _opt "-q"         "quiet: produce no output, just the exit status"
+            _opt "-w"         "word-match: pattern must be surrounded by word boundaries"
+            _opt "-x"         "line-match: the entire line must match"
+            _opt "-A N"       "print N lines After each match"
+            _opt "-B N"       "print N lines Before each match"
+            _opt "-C N"       "print N lines Context (before AND after)"
+            _sub "Pattern quick reference"
+            _opt "^"          "anchor to start of line"
+            _opt "\$"         "anchor to end of line"
+            _opt "."          "any single character"
+            _opt "[abc]"      "character class: a, b, or c"
+            _opt "[^abc]"     "negated class: anything except a, b, c"
+            _opt "[[:alpha:]]" "POSIX class: any letter"
+            _opt "[[:digit:]]" "POSIX class: any digit (0-9)"
+            _opt "* + ? {n}"  "quantifiers (BRE: * only without -E; ERE: all)"
+            _sub "Examples"
+            _eg "grep -i 'error' app.log"
+            _eg "grep -rn 'TODO' src/"
+            _eg "grep -v '^#' config.txt          # strip comment lines"
+            _eg "grep -E '^[0-9]{4}-[0-9]{2}'    # lines starting with YYYY-MM"
+            _eg "grep -c 'FAIL' results.log       # count failures"
+            _eg "grep -l 'password' /etc/**/*.conf 2>/dev/null"
+            _tip "Use 'grep -F' for literal strings — much faster than regex on large files."
+            ;;
+
+        sort)
+            _hdr "sort" "sort lines of text"
+            _txt "sort reads all input, sorts the lines, and writes the result. The default is"
+            _txt "lexicographic (dictionary) order using the current locale. Because sort reads"
+            _txt "everything before outputting anything, it works on files of any size — using"
+            _txt "temporary disk storage when the data exceeds available RAM."
+            _txt "Field-based sorting (the -k option) is extremely powerful for structured data."
+            _sub "Basic options"
+            _opt "-n"          "numeric sort: compare as numbers, not strings"
+            _opt "-r"          "reverse: descending order"
+            _opt "-u"          "unique: discard lines with duplicate sort keys"
+            _opt "-f"          "fold case: sort A and a as equal"
+            _opt "--stable"    "preserve input order for equal keys (GNU sort)"
+            _sub "Field-based sorting"
+            _opt "-t CHAR"     "use CHAR as the field delimiter (default: whitespace)"
+            _opt "-k N,M"      "sort key spans from field N to field M (inclusive)"
+            _opt "-k N,N"      "sort by field N only (not to end of line)"
+            _opt "-k N,Nn"     "sort key N as a number"
+            _opt "-k N,Nr"     "sort key N in reverse"
+            _opt "-k N,Nf"     "sort key N case-insensitively"
+            _sub "Examples"
+            _eg "sort names.txt"
+            _eg "sort -n numbers.txt"
+            _eg "sort -rn scores.txt | head -5           # top 5"
+            _eg "sort -t: -k3,3n /etc/passwd             # by UID"
+            _eg "sort -t, -k2,2n data.csv               # CSV by column 2"
+            _eg "sort -k1,1 -k2,2n mixed.txt             # two-level sort"
+            _eg "sort -t, -k2,2nr employees.csv          # by salary, highest first"
+            _tip "When sorting numerically by a field, always write -kN,N not just -kN."
+            _tip "'-k3' means 'field 3 to end of line', which is usually not what you want."
+            ;;
+
+        uniq)
+            _hdr "uniq" "filter adjacent duplicate lines"
+            _txt "uniq collapses runs of consecutive identical lines into a single line."
+            _txt "Because it only looks at adjacent lines, its input almost always needs to"
+            _txt "be pre-sorted. The idiom 'sort | uniq' is how you deduplicate a file."
+            _txt "uniq is also the engine behind the classic word-frequency pipeline."
+            _sub "Options"
+            _opt "-c"     "prefix each output line with its occurrence count"
+            _opt "-d"     "only print lines that were duplicated (appear more than once)"
+            _opt "-D"     "print all duplicate lines, not just one representative"
+            _opt "-u"     "only print lines that appeared exactly once"
+            _opt "-i"     "case-insensitive comparison"
+            _opt "-f N"   "skip first N fields before comparing"
+            _opt "-s N"   "skip first N characters before comparing"
+            _sub "Examples"
+            _eg "sort file.txt | uniq                     # deduplicate"
+            _eg "sort words.txt | uniq -c | sort -rn      # word frequency"
+            _eg "sort events.txt | uniq -d                # show duplicates"
+            _eg "sort a.txt | uniq -u                     # lines appearing once"
+            _eg "sort -t, -k1,1 data.csv | uniq -f1      # skip first field"
+            _tip "The word-frequency pipeline (McIlroy, 1986):"
+            _tip "  tr -cs 'A-Za-z' '\\n' | tr A-Z a-z | sort | uniq -c | sort -rn | head"
+            ;;
+
+        wc)
+            _hdr "wc" "count lines, words, or characters"
+            _txt "wc reads its input and reports counts. Without options it prints all three:"
+            _txt "lines, words, and bytes — in that order. It is one of the oldest Unix tools"
+            _txt "and is useful both interactively and as part of pipelines."
+            _sub "Options"
+            _opt "-l"   "count lines only"
+            _opt "-w"   "count words only (sequences separated by whitespace)"
+            _opt "-c"   "count bytes"
+            _opt "-m"   "count characters (differs from -c in multibyte UTF-8 text)"
+            _opt "-L"   "print the length of the longest line"
+            _sub "Examples"
+            _eg "wc -l access.log"
+            _eg "wc -w essay.txt"
+            _eg "cat *.txt | wc -l                  # total lines across all files"
+            _eg "find . -name '*.py' | wc -l        # count Python files"
+            _eg "echo -n 'hello' | wc -c            # byte count (5)"
+            _tip "Piped output from wc can have leading spaces — strip them:"
+            _tip "  count=\$(wc -l < file.txt)    # redirect removes the filename"
+            ;;
+
+        cut)
+            _hdr "cut" "extract fields or columns from lines"
+            _txt "cut extracts specific bytes, characters, or delimiter-separated fields from"
+            _txt "each input line. It is the simplest tool for working with structured text"
+            _txt "such as CSVs, /etc/passwd, or tab-separated values. For more complex"
+            _txt "field manipulation, prefer awk."
+            _sub "Options"
+            _opt "-d CHAR"  "set the field delimiter (default: tab)"
+            _opt "-f N"     "select field N (1-based); comma list or range supported"
+            _opt "-f 2-"    "field 2 through end of line"
+            _opt "-f 1-3"   "fields 1, 2, and 3"
+            _opt "-f 1,4"   "only fields 1 and 4"
+            _opt "-c N-M"   "select characters N through M"
+            _opt "-b N-M"   "select bytes N through M"
+            _opt "--complement" "invert: select everything NOT specified"
+            _sub "Examples"
+            _eg "cut -d, -f1,3 data.csv              # columns 1 and 3"
+            _eg "cut -d: -f1 /etc/passwd             # extract usernames"
+            _eg "cut -d, -f2- records.csv            # drop first column"
+            _eg "cut -c1-8 file.txt                  # first 8 characters"
+            _eg "cut -d' ' -f1 access.log | sort | uniq -c"
+            _tip "cut cannot reorder fields — it always outputs them left-to-right."
+            _tip "To reorder, use awk: awk -F, '{print \$3, \$1}'"
+            ;;
+
+        tr)
+            _hdr "tr" "translate or delete individual characters"
+            _txt "tr reads stdin and applies character-level transformations: substitution,"
+            _txt "deletion, or squeezing runs of repeated characters. It works on single"
+            _txt "characters, not words or patterns — there is no regex. For regex-based"
+            _txt "substitution on entire strings, use sed."
+            _txt "tr is the first step in the classic McIlroy word-frequency pipeline."
+            _sub "Basic usage"
+            _opt "'SET1' 'SET2'"      "replace each char in SET1 with the matching char in SET2"
+            _opt "-d 'SET'"           "delete every character in SET"
+            _opt "-s 'SET'"           "squeeze: runs of SET chars → single instance"
+            _opt "-c 'SET'"           "complement: use all chars NOT in SET"
+            _sub "Character ranges and POSIX classes"
+            _opt "'A-Z' 'a-z'"        "uppercase → lowercase"
+            _opt "'a-z' 'A-Z'"        "lowercase → uppercase"
+            _opt "'0-9' 'X'"          "replace all digits with X"
+            _opt "-d '[:punct:]'"     "remove all punctuation"
+            _opt "-cs 'A-Za-z' '\\n'" "keep only letters, emit each on its own line"
+            _sub "Examples"
+            _eg "tr 'A-Z' 'a-z' < shout.txt"
+            _eg "tr -s ' ' < messy.txt              # squeeze spaces"
+            _eg "tr -d '\\r' < windows.txt > unix.txt  # strip CR"
+            _eg "tr -d '[:punct:]' < prose.txt"
+            _eg "tr -cs 'A-Za-z' '\\n' < text.txt | sort | uniq -c | sort -rn | head"
+            _tip "tr has no -i / in-place flag. Use a temp file or shell substitution:"
+            _tip "  tmp=\$(mktemp); tr ... < file > \"\$tmp\" && mv \"\$tmp\" file"
+            ;;
+
+        # ── STREAMS & I/O ─────────────────────────────────────────────────────
+        redirect)
+            _hdr "redirect" "control where input and output flow"
+            _txt "Every process has three standard streams: stdin (0), stdout (1), stderr (2)."
+            _txt "Redirection operators rewire these streams to files or to each other."
+            _txt "The shell sets up redirections before the command runs, so the command"
+            _txt "itself never knows it is reading from a file rather than a terminal."
+            _nl
+            _sub "Output redirection"
+            _opt "cmd > file"       "redirect stdout to file, overwriting it (creates if needed)"
+            _opt "cmd >> file"      "redirect stdout to file, appending"
+            _opt ": > file"        "truncate a file to empty without running a command"
+            _sub "Error redirection"
+            _opt "cmd 2> file"      "redirect stderr to file"
+            _opt "cmd 2>/dev/null"  "discard all error output"
+            _opt "cmd 2>&1"         "merge stderr into stdout (order matters!)"
+            _opt "cmd > f 2>&1"     "stdout and stderr both go to f (correct order)"
+            _opt "cmd &> f"         "bash shorthand: redirect both stdout and stderr to f"
+            _sub "Input redirection"
+            _opt "cmd < file"       "feed file as stdin to cmd"
+            _opt "cmd << 'EOF' ... EOF"  "here-document: supply multi-line stdin inline"
+            _opt "cmd <<< 'string'"     "here-string: supply a single string as stdin"
+            _sub "Pipes"
+            _opt "cmd1 | cmd2"     "stdout of cmd1 → stdin of cmd2 (concurrent)"
+            _opt "cmd1 | cmd2 | cmd3"  "chain as many as needed"
+            _sub "Examples"
+            _eg "make > build.log 2>&1"
+            _eg "find / -name foo 2>/dev/null"
+            _eg "diff <(sort a.txt) <(sort b.txt)   # process substitution"
+            _eg "grep 'ERROR' app.log >> errors.log"
+            _tip "2>&1 must come AFTER > or the merge does not include the file redirect."
+            _tip "Wrong: cmd 2>&1 > file   Right: cmd > file 2>&1"
+            ;;
+
+        tee)
+            _hdr "tee" "copy stdin to both stdout and a file"
+            _txt "tee reads from stdin and writes to stdout AND to one or more files"
+            _txt "simultaneously. Think of it as a T-junction in a pipeline — data flows"
+            _txt "through to the next command while a copy is saved. Without tee you would"
+            _txt "have to choose between seeing output and saving it."
+            _sub "Options"
+            _opt "-a"   "append to the file instead of overwriting"
+            _sub "Examples"
+            _eg "make 2>&1 | tee build.log          # see AND save output"
+            _eg "curl -s api/data | tee raw.json | jq '.name'"
+            _eg "some-cmd | tee file1 file2         # write to two files"
+            _eg "echo 'text' | sudo tee /etc/protected  # write to root-owned file"
+            _tip "The last example is the standard way to write to a privileged file"
+            _tip "in a pipeline, since 'sudo echo ... > /etc/protected' would not work"
+            _tip "(the redirection happens in the current shell, not under sudo)."
+            ;;
+
+        # ── PERMISSIONS & ARCHIVES ────────────────────────────────────────────
+        chmod)
+            _hdr "chmod" "change file mode (permissions)"
+            _txt "chmod controls who can read, write, and execute a file. Unix permissions"
+            _txt "have three audiences: the owning user (u), the owning group (g), and"
+            _txt "everyone else (o). There are three permission bits per audience:"
+            _txt "read (r=4), write (w=2), execute (x=1). Permissions are set either"
+            _txt "symbolically (human-readable) or with octal numbers (compact)."
+            _sub "Symbolic mode"
+            _opt "u+x"       "add execute for the owner"
+            _opt "g-w"       "remove write from the group"
+            _opt "o=r"       "set others to read-only (clear w and x)"
+            _opt "a+r"       "add read for all (user, group, others)"
+            _opt "+x"        "add execute for everyone (same as a+x)"
+            _opt "ug=rw,o=r" "multiple specs separated by comma"
+            _sub "Octal mode — one digit per audience (u / g / o)"
+            _opt "644"       "rw-r--r--  (files: owner rw, rest read-only)"
+            _opt "755"       "rwxr-xr-x  (executables, directories)"
+            _opt "700"       "rwx------  (private directory, key files)"
+            _opt "600"       "rw-------  (private data file)"
+            _opt "777"       "rwxrwxrwx  (avoid — everyone can do everything)"
+            _sub "Flags"
+            _opt "-R"        "recursive: apply to all files in the directory tree"
+            _opt "-v"        "verbose: print each file changed"
+            _sub "Examples"
+            _eg "chmod +x deploy.sh"
+            _eg "chmod 644 config.conf"
+            _eg "chmod -R 755 public/"
+            _eg "chmod u=rw,go= secrets.key    # owner rw, group/others nothing"
+            _tip "For directories, 'x' means searchable (ability to cd into it or"
+            _tip "reference files inside). A directory without x is effectively inaccessible"
+            _tip "even if r is set."
+            ;;
+
+        tar)
+            _hdr "tar" "create, extract, or list archive files"
+            _txt "tar packs multiple files into a single archive, preserving paths, permissions,"
+            _txt "and timestamps. It can compress via gzip, bzip2, or xz. The name comes from"
+            _txt "'tape archive' — its original purpose was writing backups to magnetic tape."
+            _txt "The flag letters form a mnemonic: c=Create, x=eXtract, t=lisT,"
+            _txt "v=Verbose, f=File, z=gzip, j=bzip2, J=xz."
+            _sub "Operation (pick exactly one)"
+            _opt "-c"        "create a new archive"
+            _opt "-x"        "extract from an archive"
+            _opt "-t"        "list contents without extracting"
+            _opt "-r"        "append files to an existing uncompressed archive"
+            _opt "-u"        "update: append files newer than the archived copy"
+            _sub "Modifiers"
+            _opt "-f FILE"   "archive filename — must immediately precede FILE"
+            _opt "-v"        "verbose: print each filename as it is processed"
+            _opt "-z"        "filter through gzip   (.tar.gz or .tgz)"
+            _opt "-j"        "filter through bzip2  (.tar.bz2)"
+            _opt "-J"        "filter through xz     (.tar.xz)"
+            _opt "-C DIR"    "change into DIR before extracting (or before archiving)"
+            _opt "--strip-components=N"  "remove N leading path components on extract"
+            _opt "-p"        "preserve permissions (useful when creating backups as root)"
+            _sub "Examples"
+            _eg "tar czvf backup.tar.gz ~/docs"
+            _eg "tar xvf archive.tar -C /tmp"
+            _eg "tar tzf release.tar.gz | head          # peek inside"
+            _eg "tar cJf archive.tar.xz dir/            # best compression"
+            _eg "tar xvf pkg.tar.gz --strip-components=1 -C dest/"
+            _tip "A common mistake: 'tar xvf file.tar.gz' extracts into the CURRENT"
+            _tip "directory. Use -C or check 'tar tzf' first to see what paths it contains."
+            ;;
+
+        # ── SED & AWK ─────────────────────────────────────────────────────────
+        sed)
+            _hdr "sed" "non-interactive stream editor"
+            _txt "sed reads each line, applies a script of editing commands, and writes the"
+            _txt "result. It processes one line at a time and never loads the whole file into"
+            _txt "memory, making it suitable for arbitrarily large files. The s (substitute)"
+            _txt "command is used in the vast majority of sed invocations. Patterns are"
+            _txt "Basic Regular Expressions (BRE) by default."
+            _sub "Flags"
+            _opt "-e 'CMD'"    "add an editing command (repeat for multiple)"
+            _opt "-f FILE"     "read the sed script from FILE"
+            _opt "-n"          "suppress automatic printing — lines only print via 'p'"
+            _opt "-i"          "edit file in-place (GNU sed; dangerous without backup)"
+            _opt "-i.bak"      "in-place with a .bak backup of the original"
+            _opt "-E"          "use Extended Regular Expressions (ERE)"
+            _sub "Editing commands"
+            _opt "s/pat/rep/"   "substitute first match of pat with rep"
+            _opt "s/pat/rep/g"  "substitute all matches"
+            _opt "s/pat/rep/i"  "case-insensitive substitute"
+            _opt "s/pat/rep/2"  "substitute only the 2nd occurrence"
+            _opt "/pat/d"       "delete lines matching pat"
+            _opt "/pat/p"       "print lines matching pat (use with -n)"
+            _opt "N,Mp"         "print lines N through M (use with -n)"
+            _opt "N,Md"         "delete lines N through M"
+            _opt "y/abc/ABC/"   "transliterate chars (like tr)"
+            _opt "\\1  \\2"     "back-references to BRE capture groups \\( \\)"
+            _sub "Examples"
+            _eg "sed 's/foo/bar/g' file.txt"
+            _eg "sed '/^#/d' config.txt           # remove comment lines"
+            _eg "sed -n '10,20p' bigfile.txt      # print lines 10-20"
+            _eg "sed -i.bak 's/localhost/db/g' config.txt"
+            _eg "sed 's/\\([A-Z]\\)/[\\1]/g'     # wrap each capital letter"
+            _eg "sed -n '/START/,/END/p' file.txt # print a range between markers"
+            _tip "Test your sed expression on a few lines before using -i:"
+            _tip "  head -5 file.txt | sed 's/old/new/g'"
+            ;;
+
+        awk)
+            _hdr "awk" "pattern scanner and text processor"
+            _txt "awk splits each input line into fields (\$1, \$2, ... \$NF) and runs"
+            _txt "pattern-action pairs against them. It is a full programming language with"
+            _txt "variables, arrays, arithmetic, loops, and functions — yet for simple tasks"
+            _txt "it is often a one-liner. The name is an acronym of its authors:"
+            _txt "Aho, Weinberger, and Kernighan."
+            _sub "Flags"
+            _opt "-F SEP"      "set the input field separator (default: any whitespace)"
+            _opt "-v VAR=VAL"  "assign a variable before processing begins"
+            _opt "-f FILE"     "read the awk program from FILE instead of command line"
+            _sub "Built-in variables"
+            _opt "\$0"         "the entire current line"
+            _opt "\$1 .. \$NF" "individual fields; NF = total number of fields"
+            _opt "NR"          "current record (line) number across all input"
+            _opt "FNR"         "record number within the current file"
+            _opt "FS / OFS"    "input / output field separator"
+            _opt "RS / ORS"    "input / output record separator"
+            _opt "FILENAME"    "name of the current input file"
+            _sub "Special patterns"
+            _opt "BEGIN { }"   "run once before any input is read"
+            _opt "END { }"     "run once after all input is processed"
+            _opt "/regex/ { }" "run on lines matching the regular expression"
+            _opt "expr { }"    "run when the expression is true"
+            _sub "Examples"
+            _eg "awk '{print \$2}' data.txt"
+            _eg "awk -F: '{print \$1, \$3}' /etc/passwd     # name + UID"
+            _eg "awk '\$3 > 100 {print \$1, \$3}' data.txt"
+            _eg "awk '{s += \$1} END {print \"total:\", s}'"
+            _eg "awk 'NR % 2 == 0'                         # even-numbered lines"
+            _eg "awk 'BEGIN{OFS=\",\"} {print \$1,\$3}'    # reformat fields"
+            _tip "awk can read multiple files: awk '...' file1 file2"
+            _tip "Arrays in awk are associative (like Python dicts):"
+            _tip "  awk '{count[\$1]++} END {for(k in count) print k, count[k]}'"
+            ;;
+
+        # ── PROCESS & SYSTEM ──────────────────────────────────────────────────
+        ps)
+            _hdr "ps" "report a snapshot of running processes"
+            _txt "ps shows information about currently running processes. It is a snapshot —"
+            _txt "it captures one moment, not a live view (use top or htop for that)."
+            _txt "There are two flag styles: BSD (no hyphen) and POSIX (with hyphen)."
+            _txt "They behave differently. The combination 'aux' is the most common on Linux."
+            _sub "Common invocations"
+            _opt "aux"           "all processes, all users, including those with no terminal"
+            _opt "-e or -A"      "every process (POSIX style)"
+            _opt "-f"            "full format: UID, PID, PPID, CPU time, CMD"
+            _opt "-u USER"       "processes owned by USER"
+            _sub "Column meaning in 'ps aux'"
+            _opt "USER"          "the user who owns the process"
+            _opt "PID"           "process ID (unique numeric identifier)"
+            _opt "%CPU"          "CPU percentage over the process's lifetime"
+            _opt "%MEM"          "percentage of physical RAM"
+            _opt "VSZ"           "virtual memory size (KB)"
+            _opt "RSS"           "resident set size — RAM actually in use (KB)"
+            _opt "STAT"          "state: R=running S=sleeping Z=zombie T=stopped"
+            _opt "START"         "when the process started"
+            _opt "COMMAND"       "the full command line"
+            _sub "Examples"
+            _eg "ps aux | grep '[n]ginx'        # find nginx (bracket avoids self-match)"
+            _eg "ps aux --sort=-%mem | head -10  # top 10 memory users"
+            _eg "ps -u www-data"
+            _tip "The grep trick '[n]ginx': the bracket makes grep's own pattern not match"
+            _tip "itself, so you don't see the grep process in the output."
+            ;;
+
+        kill)
+            _hdr "kill" "send a signal to a process"
+            _txt "kill sends a signal to a process identified by its PID. Despite the name,"
+            _txt "it can send any signal — not just termination ones. Signals are the Unix"
+            _txt "mechanism for inter-process communication and control. The default signal"
+            _txt "is SIGTERM (15), which politely asks the process to clean up and exit."
+            _sub "Common signals"
+            _opt "-15 / -SIGTERM"   "graceful termination — process can catch and clean up"
+            _opt "-9  / -SIGKILL"   "force kill — kernel removes process immediately, uncatchable"
+            _opt "-1  / -SIGHUP"    "hang-up: many daemons interpret this as 'reload config'"
+            _opt "-2  / -SIGINT"    "interrupt: same as Ctrl-C from the terminal"
+            _opt "-3  / -SIGQUIT"   "quit: like SIGINT but usually generates a core dump"
+            _opt "-19 / -SIGSTOP"   "pause process (uncatchable); resume with SIGCONT"
+            _opt "-18 / -SIGCONT"   "resume a stopped process"
+            _opt "-l"               "list all signal names and numbers"
+            _sub "Related commands"
+            _opt "pkill -f 'pat'"   "kill by process name pattern (if available)"
+            _opt "killall name"     "kill all processes with this name"
+            _opt "kill 0"           "send signal to all processes in the current process group"
+            _sub "Examples"
+            _eg "kill 1234"
+            _eg "kill -9 1234             # last resort — data may be lost"
+            _eg "kill -HUP \$(pgrep nginx)"
+            _eg "kill -l | tr ' ' '\\n'  # list signals one per line"
+            _tip "Always try SIGTERM first, wait a moment, then escalate to SIGKILL."
+            _tip "SIGKILL gives the process no chance to flush buffers or release locks."
+            ;;
+
+        date)
+            _hdr "date" "print or format the current date and time"
+            _txt "Without arguments, date prints the current time in the system's default"
+            _txt "locale format. With a format string (starting with +), it formats the"
+            _txt "output using strftime(3) conversion specifiers. date is indispensable"
+            _txt "for generating timestamps in log filenames and for date arithmetic."
+            _sub "Flags"
+            _opt "'+FORMAT'"      "custom format string"
+            _opt "-d 'STRING'"    "interpret STRING as a date, not now (GNU/Linux)"
+            _opt "-v ±Nd"         "adjust by N days (macOS/BSD)"
+            _opt "-u"             "display in UTC"
+            _sub "Format specifiers (strftime)"
+            _opt "%%Y"            "4-digit year    (2025)"
+            _opt "%%m"            "2-digit month   (03)"
+            _opt "%%d"            "2-digit day     (26)"
+            _opt "%%H"            "hour 00-23"
+            _opt "%%M"            "minute 00-59"
+            _opt "%%S"            "second 00-59"
+            _opt "%%F"            "shorthand for %%Y-%%m-%%d"
+            _opt "%%T"            "shorthand for %%H:%%M:%%S"
+            _opt "%%s"            "Unix epoch (seconds since 1970-01-01 00:00:00 UTC)"
+            _opt "%%A"            "full weekday name  (Wednesday)"
+            _opt "%%B"            "full month name    (March)"
+            _sub "Examples"
+            _eg "date '+%Y-%m-%d'"
+            _eg "date '+%Y%m%d_%H%M%S'           # log-file timestamp"
+            _eg "date '+%s'                      # epoch seconds"
+            _eg "date -d 'yesterday' '+%F'       # Linux"
+            _eg "date -v -1d '+%F'               # macOS: yesterday"
+            _tip "To measure elapsed time in a script:"
+            _tip "  start=\$(date +%s); ...; echo \$(( \$(date +%s) - start ))s"
+            ;;
+
+        du)
+            _hdr "du" "estimate disk space used by files and directories"
+            _txt "du walks the given paths and reports how much disk space each item occupies."
+            _txt "Note that du reports allocated disk blocks, not file sizes — a 1-byte file"
+            _txt "may still consume 4 KB because the filesystem allocates space in blocks."
+            _sub "Options"
+            _opt "-s"          "summary: one line per argument (total only, no breakdown)"
+            _opt "-h"          "human-readable: 1.2K 34M 2.1G"
+            _opt "-a"          "all: show individual files, not just directory totals"
+            _opt "-d N"        "max-depth N (GNU: --max-depth=N)"
+            _opt "-c"          "grand total line at the end"
+            _opt "-x"          "stay on the same filesystem (don't cross mount points)"
+            _sub "Examples"
+            _eg "du -sh ~                            # total home dir size"
+            _eg "du -sh * | sort -rh | head -10     # 10 biggest items here"
+            _eg "du -ah /var/log | sort -rh | head  # largest log files"
+            _eg "du -sh /var/log/*                  # each item in /var/log"
+            _tip "On macOS, 'du -d 1 -h' shows one level of depth."
+            _tip "'-sh' (summary, human) is the most useful quick form."
+            ;;
+
+        df)
+            _hdr "df" "report free disk space on mounted filesystems"
+            _txt "df shows the total, used, and available space for each mounted filesystem."
+            _txt "When a disk fills up, df is usually the first command you run. Note that"
+            _txt "ext4 filesystems reserve ~5% of space for root — this is why df can show"
+            _txt "a filesystem as full while 'Available' is still non-zero."
+            _sub "Options"
+            _opt "-h"    "human-readable sizes (KB / MB / GB)"
+            _opt "-T"    "show the filesystem type (ext4, apfs, tmpfs, nfs ...)"
+            _opt "-i"    "show inode usage instead of block usage"
+            _opt "-x FS" "exclude filesystems of type FS"
+            _sub "Examples"
+            _eg "df -h"
+            _eg "df -h /home"
+            _eg "df -Th                        # with filesystem types"
+            _eg "df -i                         # check for inode exhaustion"
+            _tip "A disk can appear to have space left but be full of inodes — files too"
+            _tip "small or too numerous to show in block counts. 'df -i' reveals this."
+            ;;
+
+        id)
+            _hdr "id" "print user and group identity"
+            _txt "id reports the UID (user ID), GID (primary group ID), and all supplementary"
+            _txt "group IDs for the current user, or for a named user. It is the fastest"
+            _txt "way to confirm who you are running as, which is invaluable when debugging"
+            _txt "permission issues or verifying sudo/setuid behavior."
+            _sub "Options"
+            _opt "-u"    "print only the numeric UID"
+            _opt "-un"   "print only the username (name, not number)"
+            _opt "-g"    "print only the primary numeric GID"
+            _opt "-gn"   "print only the primary group name"
+            _opt "-G"    "print all supplementary group IDs"
+            _opt "-Gn"   "print all supplementary group names"
+            _sub "Examples"
+            _eg "id"
+            _eg "id -un                         # 'alice' — useful in scripts"
+            _eg "id alice                        # show info for another user"
+            _eg "id -Gn                          # all groups the current user belongs to"
+            _tip "After adding a user to a group, they must log out and log in again"
+            _tip "for the new group to appear in 'id' output."
+            ;;
+
+        env)
+            _hdr "env" "print or manipulate the process environment"
+            _txt "Every process inherits a set of name=value pairs called the environment."
+            _txt "Programs read it for configuration (HOME, PATH, LANG, EDITOR, etc.)."
+            _txt "With no arguments, env prints all current variables. With a command,"
+            _txt "it runs that command with a modified environment."
+            _sub "Options"
+            _opt "(none)"          "print all environment variables as NAME=VALUE"
+            _opt "NAME=VALUE cmd"  "add or override a variable for cmd only (not permanent)"
+            _opt "-i"              "ignore the inherited environment — start completely clean"
+            _opt "-u NAME"         "unset NAME from the environment for cmd"
+            _sub "Examples"
+            _eg "env | grep PATH"
+            _eg "env | sort"
+            _eg "LC_ALL=C sort file.txt             # override locale for one command"
+            _eg "DEBUG=1 ./my-script                # pass a flag to a script"
+            _eg "env -i HOME=/tmp bash --noprofile  # minimal clean shell"
+            _tip "Prefix assignments before a command ('FOO=bar cmd') work the same as"
+            _tip "'env FOO=bar cmd' but are a shell feature, not env. Both are equivalent."
+            ;;
+
+        # ── FILE COMPARISON ───────────────────────────────────────────────────
+        diff)
+            _hdr "diff" "compare files line by line"
+            _txt "diff finds the minimum set of changes needed to turn file1 into file2."
+            _txt "The output is called a 'diff' or 'patch'. Unified format (-u) is the"
+            _txt "standard in software development — it is what git diff produces, and what"
+            _txt "the patch command consumes. Exit status: 0=identical, 1=different, 2=error."
+            _sub "Options"
+            _opt "-u"        "unified format: @@-line context, - removed, + added"
+            _opt "-c"        "context format (older; less common)"
+            _opt "-r"        "recursive: compare entire directory trees"
+            _opt "-q"        "quiet: only report whether files differ, not how"
+            _opt "-i"        "ignore case"
+            _opt "-w"        "ignore all whitespace"
+            _opt "-b"        "ignore changes in the amount of whitespace"
+            _opt "-B"        "ignore blank-line differences"
+            _opt "--color"   "colorize output (GNU diff)"
+            _opt "-N"        "treat absent files as empty (useful with -r)"
+            _sub "Reading unified diff output"
+            _opt "--- a/file"  "original file label"
+            _opt "+++ b/file"  "modified file label"
+            _opt "@@ -L,N +M,K @@"  "hunk header: starting line and count in each file"
+            _opt "-line"      "line exists in original, removed in modified"
+            _opt "+line"      "line exists in modified, added from original"
+            _opt " line"      "context line: present in both (unchanged)"
+            _sub "Examples"
+            _eg "diff -u original.txt modified.txt"
+            _eg "diff -rq dir1/ dir2/            # which files differ"
+            _eg "diff <(sort a.txt) <(sort b.txt)  # compare sorted"
+            _eg "diff -u a.txt b.txt > fix.patch   # save a patch"
+            ;;
+
+        patch)
+            _hdr "patch" "apply a diff to update files"
+            _txt "patch reads a diff (produced by diff -u or git diff) and applies its changes"
+            _txt "to the named files. It finds the correct location even if line numbers have"
+            _txt "shifted slightly — it looks for context lines to anchor the change."
+            _txt "patch is how source tarballs are updated without distributing the full source."
+            _sub "Options"
+            _opt "-p N"        "strip N leading path components from filenames in the patch"
+            _opt "-R"          "reverse: undo an already-applied patch"
+            _opt "--dry-run"   "test whether patch would apply cleanly; make no changes"
+            _opt "-b"          "backup original files with .orig suffix before patching"
+            _opt "-s"          "silent: suppress informational messages"
+            _sub "The -p flag explained"
+            _txt "A git-format patch labels files as 'a/src/main.c' and 'b/src/main.c'."
+            _txt "Running 'patch -p1' strips the leading 'a/' or 'b/' prefix, leaving"
+            _txt "'src/main.c', which is what patch uses to find the real file."
+            _sub "Examples"
+            _eg "patch file.txt < fix.patch"
+            _eg "patch -p1 < feature.patch"
+            _eg "patch -R -p1 < feature.patch     # undo the patch"
+            _eg "patch --dry-run -p1 < big.patch  # check first"
+            _tip "If patch says 'Hunk #1 FAILED', the file has already been patched or"
+            _tip "was modified after the patch was created."
+            ;;
+
+        comm)
+            _hdr "comm" "compare two sorted files column by column"
+            _txt "comm reads two sorted files and produces three tab-indented columns:"
+            _txt "  column 1: lines only in file1"
+            _txt "  column 2: lines only in file2"
+            _txt "  column 3: lines in both files"
+            _txt "Both input files MUST be pre-sorted. comm is perfect for set operations"
+            _txt "(intersection, difference) on sorted lists of items."
+            _sub "Options — suppress columns you don't need"
+            _opt "-1"    "suppress column 1 (lines unique to file1)"
+            _opt "-2"    "suppress column 2 (lines unique to file2)"
+            _opt "-3"    "suppress column 3 (lines common to both)"
+            _opt "-12"   "show only common lines (intersection)"
+            _opt "-23"   "show only lines unique to file1"
+            _opt "-13"   "show only lines unique to file2"
+            _sub "Examples"
+            _eg "comm -12 <(sort a.txt) <(sort b.txt)   # lines in both"
+            _eg "comm -23 <(sort a.txt) <(sort b.txt)   # only in a"
+            _eg "comm -13 <(sort a.txt) <(sort b.txt)   # only in b"
+            _eg "comm -3  <(sort a.txt) <(sort b.txt)   # all differences"
+            _tip "Use process substitution <(sort file) so you don't have to pre-sort"
+            _tip "into temporary files. This is the canonical modern idiom."
+            ;;
+
+        # ── FILE INTEGRITY ────────────────────────────────────────────────────
+        sha256sum|shasum)
+            _hdr "sha256sum / shasum" "compute or verify SHA-256 checksums"
+            _txt "A cryptographic hash function takes a file of any size and produces a"
+            _txt "fixed-length 'fingerprint' (256 bits = 64 hex chars for SHA-256)."
+            _txt "Any change to the file — even flipping a single bit — produces a completely"
+            _txt "different hash. This makes it ideal for detecting accidental corruption and,"
+            _txt "combined with a digital signature, for verifying authenticity."
+            _txt "sha256sum is the Linux tool; shasum is the macOS equivalent."
+            _sub "sha256sum (Linux)"
+            _opt "(file)"          "print the hash followed by the filename"
+            _opt "-c FILE"         "verify: read 'hash  filename' pairs from FILE and check each"
+            _opt "--quiet"         "suppress OK lines when verifying"
+            _opt "-b"              "binary mode (for non-text files on some systems)"
+            _sub "shasum (macOS)"
+            _opt "-a 256 file"     "SHA-256 (explicitly select the algorithm)"
+            _opt "-a 512 file"     "SHA-512 (longer, stronger hash)"
+            _opt "-c FILE"         "verify, same semantics as sha256sum -c"
+            _sub "Examples"
+            _eg "sha256sum archive.tar.gz"
+            _eg "sha256sum *.iso > SHA256SUMS"
+            _eg "sha256sum -c SHA256SUMS            # verify a list"
+            _eg "shasum -a 256 file.dmg             # macOS"
+            _eg "echo '{}' | sha256sum              # hash stdin"
+            _tip "Always download the checksum file from a different URL or page than"
+            _tip "the software itself — otherwise a compromised server can fake both."
+            ;;
+
+        md5sum)
+            _hdr "md5sum" "compute or verify MD5 checksums"
+            _txt "md5sum produces a 32-character (128-bit) hex hash. MD5 is fast and still"
+            _txt "widely used for detecting accidental data corruption in downloads and"
+            _txt "file transfers. However, MD5 is cryptographically broken: it is feasible"
+            _txt "to generate two different files with the same MD5 hash (a collision attack)."
+            _txt "Never use MD5 to verify that a file has not been tampered with by an"
+            _txt "adversary — use SHA-256 or SHA-512 for security purposes."
+            _sub "Options"
+            _opt "(file)"     "compute hash"
+            _opt "-c FILE"    "verify hashes listed in FILE"
+            _opt "--quiet"    "suppress OK lines when verifying"
+            _sub "Examples"
+            _eg "md5sum file.txt"
+            _eg "md5sum * > MD5SUMS"
+            _eg "md5sum -c MD5SUMS"
+            _tip "On macOS, use 'md5' instead of 'md5sum'."
+            ;;
+
+        file)
+            _hdr "file" "identify file type by examining content"
+            _txt "file reads the first few hundred bytes of each input and compares them"
+            _txt "against a database of known 'magic byte' sequences — patterns that reliably"
+            _txt "identify file types regardless of their name or extension."
+            _txt "file correctly identifies JPEG images named '.txt', shell scripts with no"
+            _txt "shebang, compressed files, ELF binaries, PDFs, ZIP archives, and hundreds"
+            _txt "of other formats. It is the right tool when you receive an unknown file."
+            _sub "Options"
+            _opt "(file)"      "identify the given file"
+            _opt "-i"          "output MIME type instead of prose description"
+            _opt "-b"          "brief: omit the filename prefix"
+            _opt "-L"          "follow symbolic links"
+            _opt "-z"          "look inside compressed files"
+            _sub "Examples"
+            _eg "file photo.jpg                    # JPEG image data, JFIF standard"
+            _eg "file *                            # identify everything here"
+            _eg "file mystery.dat"
+            _eg "file -i document.pdf              # application/pdf; charset=binary"
+            _eg "file /usr/bin/ls"
+            _tip "A .tar.gz named .bak? 'file' will tell you what it really is."
+            ;;
+
+        gpg)
+            _hdr "gpg" "GNU Privacy Guard — signatures and encryption"
+            _txt "gpg implements the OpenPGP standard for cryptographic operations: digital"
+            _txt "signatures, key management, and encryption. When you download software from"
+            _txt "a project (Linux distro ISOs, Python packages, etc.), the maintainers often"
+            _txt "publish a .sig or .asc file alongside it. Verifying this signature proves"
+            _txt "both that the file came from the expected author and that it has not been"
+            _txt "modified — a stronger guarantee than a checksum alone."
+            _sub "Key operations"
+            _opt "--verify SIG FILE"    "verify that SIG is a valid signature for FILE"
+            _opt "--import KEY"         "add a public key to your keyring"
+            _opt "--recv-keys ID"       "download a key by ID from a key server"
+            _opt "--list-keys"          "list all public keys in your keyring"
+            _opt "--fingerprint ID"     "display a key's full fingerprint"
+            _opt "--keyserver URL"      "specify which key server to use"
+            _opt "--encrypt -r ID file" "encrypt file for recipient ID"
+            _opt "--decrypt file.gpg"   "decrypt a file"
+            _sub "Examples"
+            _eg "gpg --verify release.sig release.tar.gz"
+            _eg "gpg --import developer.asc"
+            _eg "gpg --recv-keys 0xABCDEF12"
+            _eg "gpg --fingerprint alice@example.com"
+            _tip "Before trusting a key, verify its fingerprint through a second channel"
+            _tip "(the project's website over HTTPS, a keybase.io profile, in person, etc.)."
+            _tip "A key server alone does not prove a key belongs to who it claims."
+            ;;
+
+        # ── BASH SCRIPTING ────────────────────────────────────────────────────
+        vars)
+            _hdr "vars" "shell variables and parameter expansion"
+            _txt "Shell variables hold string values. Assignment uses = with no spaces."
+            _txt "Expansion (retrieving the value) uses \$VAR or \${VAR}. The braces form"
+            _txt "is unambiguous and is required before characters that could extend the"
+            _txt "name (e.g. \${VAR}_suffix). All variables are strings; arithmetic is done"
+            _txt "via \$(( )) which converts to and from integers."
+            _sub "Assignment and scope"
+            _opt "VAR=value"         "assign (no spaces around =)"
+            _opt "export VAR"        "make VAR visible to child processes"
+            _opt "readonly VAR"      "make VAR immutable"
+            _opt "unset VAR"         "remove VAR from the environment"
+            _opt "local VAR"         "declare VAR local to a function"
+            _sub "Substitution operators"
+            _opt "\${VAR:-default}"   "return 'default' if VAR is unset or empty"
+            _opt "\${VAR:=default}"   "set VAR to 'default' if unset; then expand"
+            _opt "\${VAR:?message}"   "abort with message if VAR is unset or empty"
+            _opt "\${VAR:+other}"     "return 'other' if VAR is set and non-empty"
+            _opt "\${#VAR}"           "length of the string"
+            _sub "Pattern-matching operators"
+            _opt "\${VAR#pattern}"    "remove shortest match of pattern from the front"
+            _opt "\${VAR##pattern}"   "remove longest match of pattern from the front"
+            _opt "\${VAR%pattern}"    "remove shortest match of pattern from the back"
+            _opt "\${VAR%%pattern}"   "remove longest match of pattern from the back"
+            _opt "\${VAR/old/new}"    "replace first occurrence of old with new"
+            _opt "\${VAR//old/new}"   "replace all occurrences"
+            _sub "Special variables"
+            _opt "\$1 \$2 ..."       "positional parameters (command-line arguments)"
+            _opt "\$@"               "all arguments as separate strings (safe to iterate)"
+            _opt "\$*"               "all arguments as one string (joined with IFS)"
+            _opt "\$#"               "number of arguments"
+            _opt "\$?"               "exit status of last command (0=success)"
+            _opt "\$\$"              "PID of current shell"
+            _opt "\$0"               "name of the running script"
+            _sub "Examples"
+            _eg "path=/home/alice/report.pdf.gz"
+            _eg "echo \${path##*/}    # → report.pdf.gz  (basename)"
+            _eg "echo \${path%.*}     # → /home/alice/report.pdf  (no .gz)"
+            _eg "echo \${path%%.*}    # → /home/alice/report  (no extensions)"
+            _eg "name=\${1:-World}   # use argument or default"
+            _tip "Always quote variable expansions: \"\$VAR\", not \$VAR — otherwise"
+            _tip "word-splitting and glob expansion can corrupt values with spaces."
+            ;;
+
+        test)
+            _hdr "test" "evaluate conditions in shell scripts"
+            _txt "test evaluates an expression and exits 0 (true) or 1 (false). In shell"
+            _txt "scripts it is used as the condition in if, while, and until statements."
+            _txt "[ expr ] is an exact synonym for 'test expr'. In bash, [[ expr ]] is"
+            _txt "safer: it does not word-split or glob-expand variables, and supports"
+            _txt "regex matching with =~ and pattern matching with ==."
+            _sub "File tests"
+            _opt "-f FILE"     "exists and is a regular file"
+            _opt "-d FILE"     "exists and is a directory"
+            _opt "-e FILE"     "exists (any type)"
+            _opt "-x FILE"     "exists and is executable"
+            _opt "-r FILE"     "exists and is readable"
+            _opt "-w FILE"     "exists and is writable"
+            _opt "-s FILE"     "exists and has size greater than zero"
+            _opt "-h FILE"     "exists and is a symbolic link"
+            _opt "-L FILE"     "same as -h"
+            _opt "f1 -nt f2"   "f1 is newer than f2 (modification time)"
+            _opt "f1 -ot f2"   "f1 is older than f2"
+            _sub "String tests"
+            _opt "-z STR"      "STR is empty (zero length)"
+            _opt "-n STR"      "STR is non-empty"
+            _opt "S1 = S2"     "strings are equal"
+            _opt "S1 != S2"    "strings differ"
+            _opt "S1 < S2"     "S1 sorts before S2 (in bash [[ ]] only)"
+            _opt "S1 =~ regex" "S1 matches regex (bash [[ ]] only)"
+            _sub "Integer tests"
+            _opt "N1 -eq N2"   "equal"
+            _opt "N1 -ne N2"   "not equal"
+            _opt "N1 -lt N2"   "less than"
+            _opt "N1 -gt N2"   "greater than"
+            _opt "N1 -le N2"   "less than or equal"
+            _opt "N1 -ge N2"   "greater than or equal"
+            _sub "Combining (in [[ ]] use && and ||)"
+            _opt "! expr"      "negate"
+            _opt "expr -a expr" "AND (inside single [ ])"
+            _opt "expr -o expr" "OR  (inside single [ ])"
+            _sub "Examples"
+            _eg "if [[ -f \"\$file\" && -s \"\$file\" ]]; then ..."
+            _eg "[[ \"\$USER\" == 'root' ]] && echo 'running as root'"
+            _eg "[[ \$ver =~ ^[0-9]+\\.[0-9]+ ]] && echo 'version format OK'"
+            _tip "Always quote variables inside [ ]: [ -f \"\$file\" ] not [ -f \$file ]"
+            _tip "In [[ ]], quoting is safer but not required for single words."
+            ;;
+
+        case)
+            _hdr "case" "pattern-based conditional dispatch"
+            _txt "case matches a value against a list of patterns and runs the matching"
+            _txt "branch. It is far more readable than a long chain of if/elif when"
+            _txt "matching one value against many possibilities. Patterns are shell globs"
+            _txt "(not regular expressions), so * ? [ ] are the wildcards. The | character"
+            _txt "separates alternatives within a single branch. Every branch ends with ;;."
+            _sub "Syntax"
+            _txt "case VALUE in"
+            _txt "  PATTERN)   commands ;;"
+            _txt "  PAT|PAT)   commands ;;   # alternatives"
+            _txt "  *)         default   ;;   # catch-all"
+            _txt "esac"
+            _nl
+            _sub "Pattern examples"
+            _opt "start)"        "exact word match"
+            _opt "*.txt)"        "glob: any .txt filename"
+            _opt "[Yy]*)"        "starts with Y or y (yes/Yes/YES)"
+            _opt "1|2|3)"        "alternatives: 1, 2, or 3"
+            _opt "*)"            "catch-all default (like else)"
+            _sub "Examples"
+            _eg "case \"\$ext\" in"
+            _eg "  jpg|jpeg|png)  echo 'image'  ;;"
+            _eg "  txt|md)        echo 'text'   ;;"
+            _eg "  *)             echo 'other'  ;;"
+            _eg "esac"
+            _nl
+            _eg "case \"\$(uname)\" in"
+            _eg "  Darwin)  echo macOS ;;"
+            _eg "  Linux)   echo Linux ;;"
+            _eg "  *)       echo unknown ;;"
+            _eg "esac"
+            _tip "Unlike C switch, case does not fall through by default. ;; exits the"
+            _tip "case block. ;&  falls through to the next branch (bash 4+)."
+            ;;
+
+        arith)
+            _hdr "arith" "integer arithmetic in bash"
+            _txt "Bash provides two forms of integer arithmetic. \$(( expr )) evaluates an"
+            _txt "expression and substitutes the result as text into the command. (( expr ))"
+            _txt "evaluates for its exit status (0 if non-zero, 1 if zero) — useful in"
+            _txt "if and while conditions. Arithmetic is always integer-only; there are no"
+            _txt "floating-point numbers in native bash arithmetic."
+            _sub "Operators (C-style precedence)"
+            _opt "+ - * /"        "basic arithmetic (/ truncates toward zero)"
+            _opt "%%"              "modulo (remainder)"
+            _opt "** "             "exponentiation (bash extension)"
+            _opt "++ --"           "pre/post increment and decrement"
+            _opt "+= -= *= /="    "compound assignment"
+            _opt "< <= > >="      "comparison (result: 1=true, 0=false)"
+            _opt "== !="          "equality/inequality"
+            _opt "&& ||"          "logical AND / OR"
+            _opt "?:"             "ternary conditional"
+            _opt "<< >>"          "bit-shift left / right"
+            _opt "& | ^"          "bitwise AND, OR, XOR"
+            _sub "Forms"
+            _opt "\$(( expr ))"    "expand to the result value"
+            _opt "(( expr ))"      "evaluate for side effects or as a condition"
+            _opt "let expr"        "same as (( )); slightly older syntax"
+            _opt "expr"            "ancient external command; avoid in new scripts"
+            _sub "Examples"
+            _eg "echo \$(( 2 ** 10 ))              # 1024"
+            _eg "total=\$(( price * qty ))"
+            _eg "echo \$(( 17 % 5 ))               # 2"
+            _eg "i=0; while (( i < 10 )); do echo \$i; (( i++ )); done"
+            _eg "(( x = x > max ? max : x ))       # clamp x to max"
+            _eg "echo \$(( 0xFF ))                  # hex literal → 255"
+            _tip "For floating-point math, use 'bc' or 'awk':"
+            _tip "  echo 'scale=4; 22/7' | bc"
+            _tip "  awk 'BEGIN{printf \"%.4f\\n\", 22/7}'"
+            ;;
+
+        *)
+            printf "  ${RED}Unknown: '${choice}'. Try one of the commands listed in the menu.${RESET}\n"
+            ;;
+
+        esac
+
+        echo
+        press_enter
+    done
+
+    unset -f _hdr _txt _nl _sub _opt _eg _tip _show_menu
+}
+
+
 # ── Quick reference ───────────────────────────────────────────────────────────
 
 quick_reference() {
@@ -1616,13 +2933,21 @@ quick_reference() {
     _ref "file somefile"        "type by content"   "file *"                "identify all"
     _ref "gpg --verify f.sig f" "verify GPG sig"    "gpg --fingerprint id"  "inspect key"
 
+    _hdr "PIPELINES"         ""
+    _ref "tr 'A-Z' 'a-z'"      "to lowercase"      "tr -s ' '"         "squeeze spaces"
+    _ref "tr -cs 'A-Za-z' '\\n'" "one word/line"   "tr -d '\\n'"       "delete newlines"
+    _ref "sort -t: -k2,2n"     "sort field 2 num"  "sort -t, -k1,1"    "sort CSV field 1"
+    _ref "uniq -c"             "count dupes"       "uniq -d"           "only dupes"
+    _ref "uniq -u"             "only unique"       "sort|uniq -c|sort -rn" "frequency"
+
     _hdr "BASH SCRIPTING"    ""
     _ref "VAR=val"              "assign"            "\$1 \$@ \$#"       "args"
     _ref "if [[ -f f ]]; then"  "file test"         "\${v##*/}"         "strip path"
     _ref "for f in *.txt; do"   "glob loop"         "\${v%.*}"          "strip extension"
     _ref "while [[ cond ]]; do" "while loop"        "\${v/a/b}"         "replace in var"
     _ref "fname() { ...; }"     "define function"   "exit N"            "exit with code"
-    _ref "\$?"                  "last exit status"  "set -euo pipefail" ""
+    _ref "\$?"                  "last exit status"  "\$(( x + y ))"     "arithmetic"
+    _ref "case \$v in p) ;; esac" "case statement"  "set -euo pipefail" ""
 
     echo
     unset -f _ref _hdr
@@ -1645,9 +2970,11 @@ show_menu() {
     printf "  ${CYAN}9${RESET}  Bash Scripting            ${DIM}variables  loops  if  functions  exit codes${RESET}\n"
     printf "  ${CYAN}10${RESET} Process & System          ${DIM}ps  kill  date  du  df  id  env${RESET}\n"
     printf "  ${CYAN}11${RESET} File Comparison           ${DIM}diff  patch  comm${RESET}\n"
-    printf "  ${CYAN}12${RESET} File Integrity            ${DIM}sha256sum  shasum  md5sum  file${RESET}\n\n"
+    printf "  ${CYAN}12${RESET} File Integrity            ${DIM}sha256sum  shasum  md5sum  file${RESET}\n"
+    printf "  ${CYAN}13${RESET} Pipelines                 ${DIM}tr  sort -k  uniq -d  word frequency${RESET}\n\n"
     printf "  ${CYAN}r${RESET}  Random Challenge          ${DIM}(grab bag)${RESET}\n"
     printf "  ${CYAN}?${RESET}  Quick Reference\n"
+    printf "  ${CYAN}g${RESET}  Command Glossary          ${DIM}(detailed manual for every command)${RESET}\n"
     printf "  ${CYAN}q${RESET}  Quit\n\n"
     printf "  ${DIM}▶ ${RESET}"
 }
@@ -1691,8 +3018,10 @@ main() {
             10) lesson_process_system ;;
             11) lesson_file_comparison ;;
             12) lesson_integrity ;;
+            13) lesson_pipelines ;;
             r|R) random_challenge ;;
             '?') quick_reference ;;
+            g|G) command_glossary ;;
             q|Q)
                 clear_screen
                 echo
