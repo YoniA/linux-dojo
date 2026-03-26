@@ -1016,6 +1016,222 @@ EOF
 
 # ── Random challenge pool ─────────────────────────────────────────────────────
 
+lesson_process_system() {
+    header
+    center "${BOLD}${YELLOW}── LESSON 10: Process & System Info ──${RESET}"
+    echo
+    printf "  Inspect your system and manage processes:\n\n"
+    printf "  ${CYAN}ps aux${RESET}                   all running processes\n"
+    printf "  ${CYAN}ps -ef${RESET}                   full-format listing\n"
+    printf "  ${CYAN}ps aux | grep name${RESET}       find a process by name\n"
+    printf "  ${CYAN}kill PID${RESET}                 send SIGTERM to process\n"
+    printf "  ${CYAN}kill -9 PID${RESET}              force-kill (SIGKILL)\n"
+    printf "  ${CYAN}date${RESET}                     current date and time\n"
+    printf "  ${CYAN}date '+%Y-%m-%d'${RESET}         custom format\n"
+    printf "  ${CYAN}du -sh dir${RESET}               disk usage, human-readable\n"
+    printf "  ${CYAN}du -sh *${RESET}                 usage of each item here\n"
+    printf "  ${CYAN}df -h${RESET}                    free space on all filesystems\n"
+    printf "  ${CYAN}id${RESET}                       current user/group info\n"
+    printf "  ${CYAN}id -un${RESET}                   just the username\n"
+    printf "  ${CYAN}env${RESET}                      all environment variables\n"
+    printf "  ${CYAN}env VAR=val cmd${RESET}          run cmd with extra variable\n"
+    echo
+    press_enter
+
+    # Challenge 1: capture running processes
+    local a1; a1=$(new_arena)
+
+    run_linux_challenge \
+        "Snapshot running processes" \
+        "Capture a list of all running processes to 'procs.txt'.\nThe file should contain at least the current shell's PID." \
+        "$a1" \
+        '[[ -f procs.txt ]] && grep -q "bash\|sh" procs.txt' \
+        "ps aux > procs.txt  (or ps -ef > procs.txt)" \
+        "ps aux > procs.txt" \
+        10
+
+    # Challenge 2: kill a background process
+    local a2; a2=$(new_arena)
+
+    run_linux_challenge \
+        "Kill a background process" \
+        "Start a background sleep: sleep 999 &\nFind its PID with ps, then kill it.\nWhen done, write its PID to 'killed.txt'." \
+        "$a2" \
+        '[[ -f killed.txt ]] && pid=$(tr -d " \t\n" < killed.txt) && ! kill -0 "$pid" 2>/dev/null' \
+        "sleep 999 &  then: ps aux | grep sleep  →  kill <PID>  →  echo <PID> > killed.txt" \
+        "sleep 999 & ; PID=\$! ; kill \$PID ; echo \$PID > killed.txt" \
+        20
+
+    # Challenge 3: format the current date
+    local a3; a3=$(new_arena)
+    local today; today=$(date '+%Y-%m-%d')
+
+    run_linux_challenge \
+        "Write today's date" \
+        "Write today's date in YYYY-MM-DD format to 'today.txt'.\n\n${DIM}Tip: date '+%Y-%m-%d'${RESET}" \
+        "$a3" \
+        "[[ -f today.txt ]] && grep -qx \"$today\" today.txt" \
+        "date '+%Y-%m-%d' > today.txt" \
+        "date '+%Y-%m-%d' > today.txt" \
+        10
+
+    # Challenge 4: disk usage of a directory
+    local a4; a4=$(new_arena)
+    mkdir -p "$a4/data"
+    printf '%0.s x' {1..500} > "$a4/data/big.dat"
+    printf 'small\n' > "$a4/data/small.txt"
+
+    run_linux_challenge \
+        "Measure directory size" \
+        "Report the total disk usage of the 'data/' directory in human-readable form.\nWrite the output of du to 'usage.txt'." \
+        "$a4" \
+        '[[ -f usage.txt ]] && grep -q "data" usage.txt' \
+        "du -sh data/ > usage.txt  (-s = summary, -h = human-readable)" \
+        "du -sh data/ > usage.txt" \
+        15
+
+    # Challenge 5: find current username
+    local a5; a5=$(new_arena)
+    local me; me=$(id -un)
+
+    run_linux_challenge \
+        "Who am I?" \
+        "Write your current username to 'me.txt' using the id command.\n\n${DIM}Tip: id -un prints just the username${RESET}" \
+        "$a5" \
+        "[[ -f me.txt ]] && grep -qx \"$me\" me.txt" \
+        "id -un > me.txt" \
+        "id -un > me.txt" \
+        10
+
+    # Challenge 6: read an env variable
+    local a6; a6=$(new_arena)
+
+    run_linux_challenge \
+        "Capture an environment variable" \
+        "Write the value of the HOME environment variable to 'home.txt'.\n\n${DIM}Tip: echo \$HOME  or  env | grep ^HOME= | cut -d= -f2${RESET}" \
+        "$a6" \
+        "[[ -f home.txt ]] && grep -qx \"$HOME\" home.txt" \
+        'echo "$HOME" > home.txt' \
+        'echo "$HOME" > home.txt' \
+        10
+}
+
+lesson_file_comparison() {
+    header
+    center "${BOLD}${YELLOW}── LESSON 11: File Comparison ──${RESET}"
+    echo
+    printf "  Compare and reconcile files:\n\n"
+    printf "  ${CYAN}diff file1 file2${RESET}            show differences\n"
+    printf "  ${CYAN}diff -u file1 file2${RESET}         unified diff (patch-friendly)\n"
+    printf "  ${CYAN}diff -r dir1 dir2${RESET}           compare directory trees\n"
+    printf "  ${CYAN}patch file < patch.diff${RESET}     apply a diff to a file\n"
+    printf "  ${CYAN}patch -p1 < patch.diff${RESET}      apply unified diff (strip 1 path component)\n"
+    printf "  ${CYAN}comm file1 file2${RESET}            lines unique/common between sorted files\n"
+    printf "  ${CYAN}comm -12 file1 file2${RESET}        only common lines\n"
+    printf "  ${CYAN}comm -23 file1 file2${RESET}        only in file1 (not file2)\n"
+    printf "  ${CYAN}comm -13 file1 file2${RESET}        only in file2 (not file1)\n"
+    echo
+    printf "  ${DIM}Note: comm requires both files to be sorted.${RESET}\n"
+    echo
+    press_enter
+
+    # Challenge 1: diff two files
+    local a1; a1=$(new_arena)
+    printf 'line one\nline two\nline three\n' > "$a1/v1.txt"
+    printf 'line one\nline TWO\nline three\n' > "$a1/v2.txt"
+
+    run_linux_challenge \
+        "Find the difference" \
+        "'v1.txt' and 'v2.txt' differ on one line.\nRun diff on them and save the output to 'changes.diff'." \
+        "$a1" \
+        '[[ -f changes.diff ]] && grep -q "TWO\|two" changes.diff' \
+        "diff v1.txt v2.txt > changes.diff" \
+        "diff v1.txt v2.txt > changes.diff" \
+        15
+
+    # Challenge 2: apply a patch
+    local a2; a2=$(new_arena)
+    printf 'Hello world\nfoo bar\nbaz qux\n' > "$a2/file.txt"
+    diff -u /dev/null /dev/null > /dev/null 2>&1  # warm up
+    cat > "$a2/fix.patch" << 'PATCHEOF'
+--- file.txt
++++ file.txt
+@@ -1,3 +1,3 @@
+-Hello world
++Hello earth
+ foo bar
+ baz qux
+PATCHEOF
+
+    run_linux_challenge \
+        "Apply a patch" \
+        "'file.txt' needs an update described in 'fix.patch'.\nApply the patch so 'file.txt' says 'Hello earth' instead of 'Hello world'." \
+        "$a2" \
+        'grep -qx "Hello earth" file.txt && ! grep -q "Hello world" file.txt' \
+        "patch file.txt < fix.patch  (or: patch < fix.patch)" \
+        "patch file.txt < fix.patch" \
+        20
+
+    # Challenge 3: unified diff
+    local a3; a3=$(new_arena)
+    printf 'version 1\nshared line\nold content\n' > "$a3/original.txt"
+    printf 'version 1\nshared line\nnew content\n' > "$a3/updated.txt"
+
+    run_linux_challenge \
+        "Generate a unified diff" \
+        "Create a patch file 'update.patch' that captures the differences\nbetween 'original.txt' and 'updated.txt' in unified format (-u)." \
+        "$a3" \
+        '[[ -f update.patch ]] && grep -q "^---\|^+++" update.patch && grep -q "old content\|new content" update.patch' \
+        "diff -u original.txt updated.txt > update.patch" \
+        "diff -u original.txt updated.txt > update.patch" \
+        15
+
+    # Challenge 4: comm — find common lines
+    local a4; a4=$(new_arena)
+    printf 'apple\nbanana\ncherry\nmango\n' > "$a4/list_a.txt"
+    printf 'banana\ncherry\ngrape\nkiwi\n'  > "$a4/list_b.txt"
+
+    run_linux_challenge \
+        "Find common entries" \
+        "'list_a.txt' and 'list_b.txt' (both sorted) share some fruit.\nWrite only the lines that appear in BOTH files to 'common.txt'." \
+        "$a4" \
+        '[[ -f common.txt ]] && grep -qx "banana" common.txt && grep -qx "cherry" common.txt && ! grep -q "apple\|mango\|grape\|kiwi" common.txt' \
+        "comm -12 list_a.txt list_b.txt > common.txt" \
+        "comm -12 list_a.txt list_b.txt > common.txt" \
+        20
+
+    # Challenge 5: comm — lines only in one file
+    local a5; a5=$(new_arena)
+    printf 'alpha\nbeta\ngamma\ndelta\n' > "$a5/baseline.txt"
+    printf 'alpha\ngamma\nepsilon\nzeta\n' > "$a5/current.txt"
+
+    run_linux_challenge \
+        "Find removed entries" \
+        "'baseline.txt' and 'current.txt' are sorted lists.\nFind the lines that are in 'baseline.txt' but NOT in 'current.txt'.\nWrite them to 'removed.txt'." \
+        "$a5" \
+        '[[ -f removed.txt ]] && grep -qx "beta" removed.txt && grep -qx "delta" removed.txt && ! grep -q "alpha\|gamma\|epsilon\|zeta" removed.txt' \
+        "comm -23 baseline.txt current.txt > removed.txt" \
+        "comm -23 baseline.txt current.txt > removed.txt" \
+        20
+
+    # Challenge 6: diff directories
+    local a6; a6=$(new_arena)
+    mkdir -p "$a6/dir_a" "$a6/dir_b"
+    printf 'same\n'      > "$a6/dir_a/shared.txt"
+    printf 'same\n'      > "$a6/dir_b/shared.txt"
+    printf 'only in a\n' > "$a6/dir_a/exclusive.txt"
+    printf 'only in b\n' > "$a6/dir_b/other.txt"
+
+    run_linux_challenge \
+        "Compare two directories" \
+        "'dir_a' and 'dir_b' have some files in common and some unique to each.\nDiff the two directories recursively and save the result to 'tree.diff'." \
+        "$a6" \
+        '[[ -f tree.diff ]] && grep -q "exclusive\|other" tree.diff' \
+        "diff -r dir_a dir_b > tree.diff" \
+        "diff -r dir_a dir_b > tree.diff" \
+        20
+}
+
 random_challenge() {
     local r=$(( RANDOM % 8 ))
     case $r in
@@ -1235,48 +1451,181 @@ EOF
         25
 }
 
+lesson_integrity() {
+    # portable sha256: prefer sha256sum (Linux), fall back to shasum -a 256 (macOS)
+    _sha256() { sha256sum "$@" 2>/dev/null || shasum -a 256 "$@"; }
+    _sha256c() { sha256sum -c "$@" 2>/dev/null || shasum -a 256 -c "$@"; }
+
+    header
+    center "${BOLD}${YELLOW}── LESSON 12: File Integrity & Checksums ──${RESET}"
+    echo
+    printf "  Verify that files are what they claim to be:\n\n"
+    printf "  ${CYAN}md5sum file${RESET}               compute MD5 hash\n"
+    printf "  ${CYAN}md5sum -c file.md5${RESET}        verify against stored hash\n"
+    printf "  ${CYAN}sha256sum file${RESET}             compute SHA-256 hash\n"
+    printf "  ${CYAN}sha256sum -c file.sha256${RESET}   verify against stored hash\n"
+    printf "  ${CYAN}shasum -a 256 file${RESET}         macOS equivalent of sha256sum\n"
+    printf "  ${CYAN}shasum -a 512 file${RESET}         SHA-512 (stronger)\n"
+    printf "  ${CYAN}file somefile${RESET}              identify file type by content\n"
+    printf "  ${CYAN}file *${RESET}                     identify all files in dir\n"
+    printf "  ${CYAN}gpg --verify file.sig file${RESET} verify a GPG signature\n"
+    printf "  ${CYAN}gpg --fingerprint keyid${RESET}    inspect a key's fingerprint\n"
+    echo
+    printf "  ${DIM}Note: md5 is fast but broken for security — use SHA-256 or better.${RESET}\n"
+    printf "  ${DIM}      On macOS use 'shasum -a 256' if 'sha256sum' is unavailable.${RESET}\n"
+    echo
+    press_enter
+
+    # Challenge 1: generate a SHA-256 checksum
+    local a1; a1=$(new_arena)
+    printf 'important data\n' > "$a1/payload.txt"
+
+    run_linux_challenge \
+        "Generate a SHA-256 checksum" \
+        "Compute the SHA-256 hash of 'payload.txt' and save it to 'payload.sha256'.\nThe file should be in the standard checksum format (hash + filename).\n\n${DIM}Tip: sha256sum payload.txt > payload.sha256\n     (macOS: shasum -a 256 payload.txt > payload.sha256)${RESET}" \
+        "$a1" \
+        '[[ -f payload.sha256 ]] && (cd "'"$a1"'" && _sha256c payload.sha256) &>/dev/null' \
+        "sha256sum payload.txt > payload.sha256  (macOS: shasum -a 256 payload.txt > payload.sha256)" \
+        "sha256sum payload.txt > payload.sha256" \
+        15
+
+    # Challenge 2: verify an untampered file
+    local a2; a2=$(new_arena)
+    printf 'verified content\n' > "$a2/release.tar.gz"
+    _sha256 "$a2/release.tar.gz" > "$a2/release.tar.gz.sha256" 2>/dev/null
+
+    run_linux_challenge \
+        "Verify a file's checksum" \
+        "'release.tar.gz' and its checksum file 'release.tar.gz.sha256' are provided.\nVerify the file is intact. Write 'OK' to 'result.txt' if it passes, 'FAIL' if not.\n\n${DIM}Tip: sha256sum -c release.tar.gz.sha256  (exits 0 on success)${RESET}" \
+        "$a2" \
+        '[[ -f result.txt ]] && grep -qx "OK" result.txt' \
+        "sha256sum -c release.tar.gz.sha256 && echo OK > result.txt || echo FAIL > result.txt" \
+        "sha256sum -c release.tar.gz.sha256 && echo OK > result.txt || echo FAIL > result.txt" \
+        20
+
+    # Challenge 3: detect a tampered file
+    local a3; a3=$(new_arena)
+    printf 'original content\n' > "$a3/package.bin"
+    _sha256 "$a3/package.bin" > "$a3/package.sha256" 2>/dev/null
+    printf 'tampered content\n' > "$a3/package.bin"   # silently overwrite
+
+    run_linux_challenge \
+        "Detect a tampered file" \
+        "'package.bin' was modified after its checksum was recorded in 'package.sha256'.\nVerify the checksum. Write 'OK' to 'result.txt' if it passes, 'FAIL' if not." \
+        "$a3" \
+        '[[ -f result.txt ]] && grep -qx "FAIL" result.txt' \
+        "sha256sum -c package.sha256 && echo OK > result.txt || echo FAIL > result.txt" \
+        "sha256sum -c package.sha256 && echo OK > result.txt || echo FAIL > result.txt" \
+        20
+
+    # Challenge 4: checksum multiple files
+    local a4; a4=$(new_arena)
+    printf 'file one\n'   > "$a4/a.txt"
+    printf 'file two\n'   > "$a4/b.txt"
+    printf 'file three\n' > "$a4/c.txt"
+
+    run_linux_challenge \
+        "Checksum a batch of files" \
+        "Generate SHA-256 checksums for all .txt files at once\nand save them to 'checksums.sha256'." \
+        "$a4" \
+        '[[ -f checksums.sha256 ]] && grep -q "a.txt" checksums.sha256 && grep -q "b.txt" checksums.sha256 && grep -q "c.txt" checksums.sha256 && (cd "'"$a4"'" && _sha256c checksums.sha256) &>/dev/null' \
+        "sha256sum *.txt > checksums.sha256  (macOS: shasum -a 256 *.txt > checksums.sha256)" \
+        "sha256sum *.txt > checksums.sha256" \
+        20
+
+    # Challenge 5: identify file types with `file`
+    local a5; a5=$(new_arena)
+    # Create files whose content doesn't match their extension
+    printf '#!/bin/bash\necho hi\n' > "$a5/mystery.dat"   # actually a shell script
+    printf 'GIF87a'                 > "$a5/photo.txt"      # actually a GIF header
+    printf 'normal text\n'          > "$a5/readme.log"     # plain text
+
+    run_linux_challenge \
+        "Identify file types by content" \
+        "The extensions of the files here are misleading.\nRun 'file' on all files and save the output to 'types.txt'.\nThen answer: which file is actually a shell script? Write its name to 'script.txt'." \
+        "$a5" \
+        '[[ -f types.txt ]] && grep -qi "shell\|bash\|script" types.txt && [[ -f script.txt ]] && grep -qx "mystery.dat" script.txt' \
+        "file * > types.txt  then: echo mystery.dat > script.txt" \
+        "file * > types.txt ; echo mystery.dat > script.txt" \
+        20
+
+    unset -f _sha256 _sha256c
+}
+
 # ── Quick reference ───────────────────────────────────────────────────────────
 
 quick_reference() {
+    # _ref: one two-column row. Args are plain text; colors live in the format
+    # string so %-Ns counts only visible characters.
+    _ref() {
+        printf "  ${CYAN}%-22s${RESET}  %-18s" "$1" "$2"
+        [[ -n "${3:-}" ]] && printf "  ${CYAN}%-22s${RESET}  %s" "$3" "${4:-}"
+        printf "\n"
+    }
+    # _hdr: section header pair; right title starts at same column as right cmd
+    _hdr() {
+        printf "\n  ${BOLD}${CYAN}%-44s${RESET}${BOLD}${CYAN}%s${RESET}\n" "${1:-}" "${2:-}"
+    }
+
     header
     center "${BOLD}${YELLOW}── QUICK REFERENCE ──${RESET}"
+
+    _hdr "NAVIGATION"        "FILE OPS"
+    _ref "ls -la"            "list w/ hidden"    "cp src dst"        "copy"
+    _ref "pwd"               "print dir"         "mv src dst"        "move / rename"
+    _ref "cd -"              "previous dir"      "rm -r dir"         "remove recursively"
+    _ref "find . -name 'p'"  "search by name"    "mkdir -p a/b/c"    "create nested dirs"
+    _ref "find . -type f"    "files only"        "touch file"        "create / update"
+
+    _hdr "TEXT PROCESSING"   "REDIRECTION"
+    _ref "grep 'p' f"        "match lines"       "cmd > f"           "write stdout"
+    _ref "grep -v 'p' f"     "invert match"      "cmd >> f"          "append stdout"
+    _ref "sort -n"           "numeric sort"      "cmd 2>/dev/null"   "discard errors"
+    _ref "sort | uniq -c"    "count dupes"       "cmd1 | cmd2"       "pipe"
+    _ref "cut -d, -f2"       "csv field 2"       "tee file"          "stdout + file"
+    _ref "wc -l"             "count lines"
+
+    _hdr "PERMISSIONS"       "ARCHIVES"
+    _ref "chmod +x f"        "add execute"       "tar cvf a.tar dir" "create"
+    _ref "chmod 644 f"       "rw-r--r--"         "tar xvf a.tar"     "extract"
+    _ref "chmod 755 f"       "rwxr-xr-x"         "tar czvf f.tar.gz" "create + gzip"
+    _ref "chmod 700 f"       "rwx------"         "tar tzf f.tar.gz"  "list contents"
+
+    _hdr "FIND + XARGS"      "SED & AWK"
+    _ref "find . -name/-iname" "name (case-insens)" "sed 's/a/b/g' f"  "replace all"
+    _ref "find . -type f/d/l"  "type filter"        "sed '/pat/d' f"   "delete lines"
+    _ref "find . -size +1M"    "size filter"        "awk '{print \$2}'" "print field 2"
+    _ref "find . -mtime -7"    "modified N days"    "awk '\$3>10'"      "filter rows"
+    _ref "find . -perm -u+x"   "perm filter"        "awk '{s+=\$1} END{print s}'" "sum col"
+    _ref "find . -exec {} +"   "run per result"     "xargs -I{} cmd {}" "placeholder sub"
+    _ref "find . -delete"      "delete matches"
+
+    _hdr "PROCESS & SYSTEM"  "FILE COMPARISON"
+    _ref "ps aux"            "all processes"     "diff a b"          "show differences"
+    _ref "kill PID"          "send SIGTERM"      "diff -u a b"       "unified diff"
+    _ref "kill -9 PID"       "force kill"        "diff -r d1 d2"     "compare dirs"
+    _ref "date '+%Y-%m-%d'"  "format date"       "patch f < p.diff"  "apply patch"
+    _ref "du -sh dir"        "dir size"          "comm -12 a b"      "common lines"
+    _ref "df -h"             "free space"        "comm -23 a b"      "only in a"
+    _ref "id -un"            "username"          "comm -13 a b"      "only in b"
+
+    _hdr "FILE INTEGRITY"    ""
+    _ref "sha256sum file"       "compute SHA-256"   "sha256sum -c f.sha256" "verify"
+    _ref "shasum -a 256 file"   "macOS SHA-256"     "shasum -a 512 file"    "SHA-512"
+    _ref "md5sum file"          "compute MD5"       "md5sum -c f.md5"       "verify MD5"
+    _ref "file somefile"        "type by content"   "file *"                "identify all"
+    _ref "gpg --verify f.sig f" "verify GPG sig"    "gpg --fingerprint id"  "inspect key"
+
+    _hdr "BASH SCRIPTING"    ""
+    _ref "VAR=val"              "assign"            "\$1 \$@ \$#"       "args"
+    _ref "if [[ -f f ]]; then"  "file test"         "\${v##*/}"         "strip path"
+    _ref "for f in *.txt; do"   "glob loop"         "\${v%.*}"          "strip extension"
+    _ref "while [[ cond ]]; do" "while loop"        "\${v/a/b}"         "replace in var"
+    _ref "fname() { ...; }"     "define function"   "exit N"            "exit with code"
+    _ref "\$?"                  "last exit status"  "set -euo pipefail" ""
+
     echo
-    printf "  ${BOLD}${CYAN}NAVIGATION${RESET}                            ${BOLD}${CYAN}FILE OPS${RESET}\n"
-    printf "  ${CYAN}ls -la${RESET}     list w/ hidden           ${CYAN}cp src dst${RESET}     copy\n"
-    printf "  ${CYAN}pwd${RESET}        print dir                ${CYAN}mv src dst${RESET}     move/rename\n"
-    printf "  ${CYAN}cd -${RESET}       previous dir             ${CYAN}rm -r dir${RESET}      remove recursively\n"
-    printf "  ${CYAN}find . -name${RESET} search by name         ${CYAN}mkdir -p a/b/c${RESET} create nested\n"
-    printf "  ${CYAN}find . -type f${RESET} files only           ${CYAN}touch file${RESET}     create/update\n"
-    echo
-    printf "  ${BOLD}${CYAN}TEXT PROCESSING${RESET}                       ${BOLD}${CYAN}REDIRECTION${RESET}\n"
-    printf "  ${CYAN}grep 'p' f${RESET}  match lines             ${CYAN}cmd > f${RESET}        write stdout\n"
-    printf "  ${CYAN}grep -v${RESET}     invert match            ${CYAN}cmd >> f${RESET}       append stdout\n"
-    printf "  ${CYAN}sort -n${RESET}     numeric sort            ${CYAN}cmd 2>/dev/null${RESET} discard errors\n"
-    printf "  ${CYAN}sort|uniq -c${RESET} count dupes            ${CYAN}cmd1|cmd2${RESET}      pipe\n"
-    printf "  ${CYAN}cut -d, -f2${RESET} csv field 2             ${CYAN}tee file${RESET}       split to file+stdout\n"
-    printf "  ${CYAN}wc -l${RESET}       count lines\n"
-    echo
-    printf "  ${BOLD}${CYAN}PERMISSIONS${RESET}                           ${BOLD}${CYAN}ARCHIVES${RESET}\n"
-    printf "  ${CYAN}chmod +x f${RESET}   add execute            ${CYAN}tar cvf a.tar dir${RESET}  create\n"
-    printf "  ${CYAN}chmod 644 f${RESET}  rw-r--r--              ${CYAN}tar xvf a.tar${RESET}      extract\n"
-    printf "  ${CYAN}chmod 755 f${RESET}  rwxr-xr-x              ${CYAN}tar czvf a.tar.gz${RESET}  create+gzip\n"
-    printf "  ${CYAN}chmod 700 f${RESET}  rwx------              ${CYAN}tar tzf a.tar.gz${RESET}   list\n"
-    echo
-    printf "  ${BOLD}${CYAN}FIND + XARGS${RESET}                          ${BOLD}${CYAN}SED & AWK${RESET}\n"
-    printf "  ${CYAN}find . -delete${RESET}  delete results       ${CYAN}sed 's/a/b/g' f${RESET}  replace\n"
-    printf "  ${CYAN}find . -exec cmd {} +${RESET}               ${CYAN}sed '/pat/d' f${RESET}    delete lines\n"
-    printf "  ${CYAN}find . | xargs grep${RESET}                 ${CYAN}awk '{print \$2}'${RESET}  field 2\n"
-    printf "  ${CYAN}xargs -I{} cmd {}${RESET}                   ${CYAN}awk '\$3>10'${RESET}       filter rows\n"
-    printf "                                       ${CYAN}awk '{s+=\$1}END{print s}'${RESET}\n"
-    echo
-    printf "  ${BOLD}${CYAN}BASH SCRIPTING${RESET}\n"
-    printf "  ${CYAN}VAR=val${RESET}           assign               ${CYAN}\$1 \$@ \$#${RESET}       args\n"
-    printf "  ${CYAN}if [[ -f f ]]; then${RESET}                   ${CYAN}\${v##*/}${RESET}        strip path\n"
-    printf "  ${CYAN}for f in *.txt; do${RESET}                    ${CYAN}\${v%.*}${RESET}         strip extension\n"
-    printf "  ${CYAN}while [[ cond ]]; do${RESET}                  ${CYAN}\${v/a/b}${RESET}        replace\n"
-    printf "  ${CYAN}fname() { ...; }${RESET}  define function      ${CYAN}exit N${RESET}          exit with code\n"
-    printf "  ${CYAN}\$?${RESET}                last exit status     ${CYAN}set -euo pipefail${RESET}\n"
-    echo
+    unset -f _ref _hdr
     press_enter
 }
 
@@ -1293,7 +1642,10 @@ show_menu() {
     printf "  ${CYAN}6${RESET}  Archives & Compression    ${DIM}tar  gzip  zip${RESET}\n"
     printf "  ${CYAN}7${RESET}  find & xargs              ${DIM}-exec  -delete  -size  pipelines${RESET}\n"
     printf "  ${CYAN}8${RESET}  sed & awk                 ${DIM}substitute  delete  columns  filter${RESET}\n"
-    printf "  ${CYAN}9${RESET}  Bash Scripting            ${DIM}variables  loops  if  functions  exit codes${RESET}\n\n"
+    printf "  ${CYAN}9${RESET}  Bash Scripting            ${DIM}variables  loops  if  functions  exit codes${RESET}\n"
+    printf "  ${CYAN}10${RESET} Process & System          ${DIM}ps  kill  date  du  df  id  env${RESET}\n"
+    printf "  ${CYAN}11${RESET} File Comparison           ${DIM}diff  patch  comm${RESET}\n"
+    printf "  ${CYAN}12${RESET} File Integrity            ${DIM}sha256sum  shasum  md5sum  file${RESET}\n\n"
     printf "  ${CYAN}r${RESET}  Random Challenge          ${DIM}(grab bag)${RESET}\n"
     printf "  ${CYAN}?${RESET}  Quick Reference\n"
     printf "  ${CYAN}q${RESET}  Quit\n\n"
@@ -1336,6 +1688,9 @@ main() {
             7) lesson_find_xargs ;;
             8) lesson_sed_awk ;;
             9) lesson_bash_scripting ;;
+            10) lesson_process_system ;;
+            11) lesson_file_comparison ;;
+            12) lesson_integrity ;;
             r|R) random_challenge ;;
             '?') quick_reference ;;
             q|Q)
